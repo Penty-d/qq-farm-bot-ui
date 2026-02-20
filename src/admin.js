@@ -13,6 +13,8 @@ const { QRLoginSession, MiniProgramLoginSession } = require('./qrlogin');
 const { CookieUtils } = require('./qrutils');
 const { getResourcePath } = require('./runtime-paths');
 
+const hashPassword = (pwd) => crypto.createHash('sha256').update(String(pwd || '')).digest('hex');
+
 let app = null;
 let server = null;
 let provider = null; // DataProvider
@@ -51,7 +53,15 @@ function startAdminServer(dataProvider) {
     // 登录与鉴权
     app.post('/api/login', (req, res) => {
         const { password } = req.body || {};
-        if (String(password || '') !== String(CONFIG.adminPassword || '')) {
+        const input = String(password || '');
+        const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
+        let ok = false;
+        if (storedHash) {
+            ok = hashPassword(input) === storedHash;
+        } else {
+            ok = input === String(CONFIG.adminPassword || '');
+        }
+        if (!ok) {
             return res.status(401).json({ ok: false, error: 'Invalid password' });
         }
         const token = issueToken();
@@ -62,6 +72,27 @@ function startAdminServer(dataProvider) {
     app.use('/api', (req, res, next) => {
         if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check') return next();
         return authRequired(req, res, next);
+    });
+
+    app.post('/api/admin/change-password', (req, res) => {
+        const body = req.body || {};
+        const oldPassword = String(body.oldPassword || '');
+        const newPassword = String(body.newPassword || '');
+        if (newPassword.length < 4) {
+            return res.status(400).json({ ok: false, error: '新密码长度至少为 4 位' });
+        }
+        const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
+        const ok = storedHash
+            ? hashPassword(oldPassword) === storedHash
+            : oldPassword === String(CONFIG.adminPassword || '');
+        if (!ok) {
+            return res.status(400).json({ ok: false, error: '原密码错误' });
+        }
+        const nextHash = hashPassword(newPassword);
+        if (store.setAdminPasswordHash) {
+            store.setAdminPasswordHash(nextHash);
+        }
+        res.json({ ok: true });
     });
 
     app.get('/api/ping', (req, res) => {

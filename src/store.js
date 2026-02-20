@@ -51,8 +51,9 @@ let globalConfig = {
     accountConfigs: {},
     defaultAccountConfig: cloneAccountConfig(DEFAULT_ACCOUNT_CONFIG),
     ui: {
-        theme: 'dark', // dark | light
+        theme: 'dark',
     },
+    adminPasswordHash: '',
 };
 
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
@@ -176,6 +177,9 @@ function loadGlobalConfig() {
             globalConfig.ui = { ...globalConfig.ui, ...(data.ui || {}) };
             const theme = String(globalConfig.ui.theme || '').toLowerCase();
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
+            if (typeof data.adminPasswordHash === 'string') {
+                globalConfig.adminPasswordHash = data.adminPasswordHash;
+            }
         }
     } catch (e) {
         console.error('加载配置失败:', e.message);
@@ -191,6 +195,16 @@ function saveGlobalConfig() {
     } catch (e) {
         console.error('保存配置失败:', e.message);
     }
+}
+
+function getAdminPasswordHash() {
+    return String(globalConfig.adminPasswordHash || '');
+}
+
+function setAdminPasswordHash(hash) {
+    globalConfig.adminPasswordHash = String(hash || '');
+    saveGlobalConfig();
+    return globalConfig.adminPasswordHash;
 }
 
 // 初始化加载
@@ -434,4 +448,6 @@ module.exports = {
     getAccounts,
     addOrUpdateAccount,
     deleteAccount,
+    getAdminPasswordHash,
+    setAdminPasswordHash,
 };

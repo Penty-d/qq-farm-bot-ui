@@ -478,6 +478,63 @@ $('btn-save-settings').addEventListener('click', async () => {
     }
 });
 
+const changeAdminPasswordBtn = document.getElementById('btn-change-admin-password');
+if (changeAdminPasswordBtn) {
+    changeAdminPasswordBtn.addEventListener('click', async () => {
+        const oldPwdEl = $('admin-old-password');
+        const newPwdEl = $('admin-new-password');
+        const newPwd2El = $('admin-new-password2');
+        const oldPwd = oldPwdEl ? oldPwdEl.value : '';
+        const newPwd = newPwdEl ? newPwdEl.value : '';
+        const newPwd2 = newPwd2El ? newPwd2El.value : '';
+        if (!oldPwd) {
+            alert('请输入当前管理密码');
+            if (oldPwdEl) oldPwdEl.focus();
+            return;
+        }
+        if (!newPwd) {
+            alert('请输入新密码');
+            if (newPwdEl) newPwdEl.focus();
+            return;
+        }
+        if (newPwd.length < 4) {
+            alert('新密码长度至少为 4 位');
+            if (newPwdEl) newPwdEl.focus();
+            return;
+        }
+        if (newPwd !== newPwd2) {
+            alert('两次输入的新密码不一致');
+            if (newPwd2El) newPwd2El.focus();
+            return;
+        }
+        changeAdminPasswordBtn.disabled = true;
+        try {
+            const r = await fetch(API_ROOT + '/api/admin/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-token': adminToken,
+                },
+                body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd }),
+            });
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || !j.ok) {
+                const msg = (j && (j.error || j.message)) || '修改失败';
+                alert(msg);
+                return;
+            }
+            if (oldPwdEl) oldPwdEl.value = '';
+            if (newPwdEl) newPwdEl.value = '';
+            if (newPwd2El) newPwd2El.value = '';
+            alert('管理密码已更新，请牢记新密码');
+        } catch (e) {
+            alert('修改失败');
+        } finally {
+            changeAdminPasswordBtn.disabled = false;
+        }
+    });
+}
+
 // 加载额外设置
 async function loadSettings() {
     const data = await api('/api/settings');

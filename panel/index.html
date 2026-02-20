@@ -300,6 +300,18 @@
                 </div>
               </div>
             </div>
+            <div class="card">
+              <div class="card-head"><h3><i class="fas fa-lock"></i> 管理密码</h3></div>
+              <div class="settings-grid">
+                <div class="form-group"><label>当前密码</label><input id="admin-old-password" class="form-control" type="password" placeholder="当前管理密码"></div>
+                <div class="form-group"><label>新密码</label><input id="admin-new-password" class="form-control" type="password" placeholder="至少 4 位"></div>
+                <div class="form-group"><label>确认新密码</label><input id="admin-new-password2" class="form-control" type="password" placeholder="再次输入新密码"></div>
+              </div>
+              <div class="settings-actions">
+                <button id="btn-change-admin-password" class="btn btn-primary">修改管理密码</button>
+                <div style="margin-top:8px;color:var(--text-sub);font-size:13px">首次使用建议修改默认密码，默认密码：admin</div>
+              </div>
+            </div>
           </div>
           <div class="settings-actions">
             <button id="btn-save-settings" class="btn btn-primary save-btn">保存策略与自动控制</button>

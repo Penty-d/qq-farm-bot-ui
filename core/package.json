@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "type": "module",
+  "type": "commonjs",
   "version": "1.2.1",
   "description": "",
   "author": "",

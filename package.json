@@ -1,16 +1,16 @@
 {
   "name": "qq-farm-bot-ui",
   "scripts": {
+    "dev": "pnpm build:web && pnpm dev:core",
     "dev:core": "pnpm -C core dev",
     "dev:web": "pnpm -C web dev",
-    "dev": "pnpm build:web && pnpm dev:core",
+    "lint": "pnpm lint:core && pnpm lint:web",
+    "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
     "build:web": "pnpm -C web build",
-    "build": "pnpm build:web",
-    "package:win": "pnpm build:web && pnpm -C core build:win",
-    "package:linux": "pnpm build:web && pnpm -C core build:linux",
-    "package:mac": "pnpm build:web && pnpm -C core build:mac",
-    "package:release": "pnpm build:web && pnpm -C core build:release",
-    "install:all": "pnpm install -r"
+    "build:release": "pnpm build:web && pnpm -C core build:release",
+    "build:win": "pnpm build:web && pnpm -C core build:win",
+    "build:linux": "pnpm build:web && pnpm -C core build:linux",
+    "build:mac": "pnpm build:web && pnpm -C core build:mac"
   }
 }

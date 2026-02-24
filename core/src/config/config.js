@@ -2,34 +2,36 @@
  * 配置常量与枚举定义
  */
 
+const process = require('node:process')
+
 const CONFIG = {
-    serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-    clientVersion: '1.6.0.14_20251224',
-    platform: 'qq',              // 平台: qq 或 wx (可通过 --wx 切换为微信)
-    os: 'iOS',
-    heartbeatInterval: 25000,    // 心跳间隔 25秒
-    farmCheckInterval: 2000,      // 兼容旧逻辑：自己农场固定巡查间隔(ms)
-    friendCheckInterval: 10000,   // 兼容旧逻辑：好友固定巡查间隔(ms)
-    farmCheckIntervalMin: 2000,   // 新逻辑：农场巡查间隔最小值(ms)
-    farmCheckIntervalMax: 2000,   // 新逻辑：农场巡查间隔最大值(ms)
-    friendCheckIntervalMin: 10000,// 新逻辑：好友巡查间隔最小值(ms)
-    friendCheckIntervalMax: 10000,// 新逻辑：好友巡查间隔最大值(ms)
-    adminPort: 3000,             // 管理面板 HTTP 端口
-    adminPassword: process.env.ADMIN_PASSWORD || 'admin',
-};
+  serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
+  clientVersion: '1.6.0.14_20251224',
+  platform: 'qq', // 平台: qq 或 wx (可通过 --wx 切换为微信)
+  os: 'iOS',
+  heartbeatInterval: 25000, // 心跳间隔 25秒
+  farmCheckInterval: 2000, // 兼容旧逻辑：自己农场固定巡查间隔(ms)
+  friendCheckInterval: 10000, // 兼容旧逻辑：好友固定巡查间隔(ms)
+  farmCheckIntervalMin: 2000, // 新逻辑：农场巡查间隔最小值(ms)
+  farmCheckIntervalMax: 2000, // 新逻辑：农场巡查间隔最大值(ms)
+  friendCheckIntervalMin: 10000, // 新逻辑：好友巡查间隔最小值(ms)
+  friendCheckIntervalMax: 10000, // 新逻辑：好友巡查间隔最大值(ms)
+  adminPort: 3000, // 管理面板 HTTP 端口
+  adminPassword: process.env.ADMIN_PASSWORD || 'admin',
+}
 
 // 生长阶段枚举
 const PlantPhase = {
-    UNKNOWN: 0,
-    SEED: 1,
-    GERMINATION: 2,
-    SMALL_LEAVES: 3,
-    LARGE_LEAVES: 4,
-    BLOOMING: 5,
-    MATURE: 6,
-    DEAD: 7,
-};
+  UNKNOWN: 0,
+  SEED: 1,
+  GERMINATION: 2,
+  SMALL_LEAVES: 3,
+  LARGE_LEAVES: 4,
+  BLOOMING: 5,
+  MATURE: 6,
+  DEAD: 7,
+}
 
-const PHASE_NAMES = ['未知', '种子', '发芽', '小叶', '大叶', '开花', '成熟', '枯死'];
+const PHASE_NAMES = ['未知', '种子', '发芽', '小叶', '大叶', '开花', '成熟', '枯死']
 
-module.exports = { CONFIG, PlantPhase, PHASE_NAMES };
+module.exports = { CONFIG, PlantPhase, PHASE_NAMES }

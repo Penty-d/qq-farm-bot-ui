@@ -27,7 +27,7 @@ export const useAppStore = defineStore('app', () => {
       }
     }
     catch (e) {
-      console.error('Failed to fetch theme:', e)
+      console.error('设置主题错误:', e)
     }
   }
 
@@ -37,7 +37,7 @@ export const useAppStore = defineStore('app', () => {
       isDark.value = theme === 'dark'
     }
     catch (e) {
-      console.error('Failed to set theme:', e)
+      console.error('设置主题错误:', e)
     }
   }
 

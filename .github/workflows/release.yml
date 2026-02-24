@@ -39,7 +39,7 @@ jobs:
           pnpm install
 
       - name: Build
-        run: pnpm package:release
+        run: pnpm build:release
 
       - name: List Artifacts
         run: ls -R core/dist

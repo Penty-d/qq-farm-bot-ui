@@ -1,10 +1,10 @@
 {
   "name": "qq-farm-bot",
+  "type": "commonjs",
   "version": "1.2.1",
   "description": "",
-  "license": "ISC",
   "author": "",
-  "type": "commonjs",
+  "license": "ISC",
   "main": "client.js",
   "bin": "client.js",
   "scripts": {
@@ -14,6 +14,7 @@
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
     "build:mac": "pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist",
+    "lint": "eslint . --fix",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
@@ -25,6 +26,8 @@
     "ws": "^8.19.0"
   },
   "devDependencies": {
+    "@antfu/eslint-config": "^7.4.3",
+    "eslint": "^10.0.1",
     "pkg": "^5.8.1"
   },
   "pkg": {

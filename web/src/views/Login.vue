@@ -41,7 +41,7 @@ async function handleLogin() {
         <h1 class="text-3xl text-gray-900 font-bold tracking-tight dark:text-white">
           QQ农场智能助手
         </h1>
-        <p class="mt-3 text-sm text-gray-500 uppercase tracking-widest dark:text-gray-400">
+        <p class="mt-3 text-sm text-gray-500 tracking-widest uppercase dark:text-gray-400">
           管理面板
         </p>
       </div>

@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { useAccountStore } from '@/stores/account'
+import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 
 const router = useRouter()
 const accountStore = useAccountStore()
@@ -123,8 +123,17 @@ function handleSaved() {
               <h3 class="text-lg font-bold">
                 {{ acc.name || acc.nick || acc.id }}
               </h3>
-              <div class="text-sm text-gray-500">
-                QQ: {{ acc.uin || '未绑定' }}
+              <div class="mt-0.5 flex items-center gap-1.5">
+                <span
+                  v-if="acc.platform"
+                  class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                  :class="getPlatformClass(acc.platform)"
+                >
+                  {{ getPlatformLabel(acc.platform) }}
+                </span>
+                <span class="text-sm text-gray-500">
+                  {{ acc.uin || '未绑定' }}
+                </span>
               </div>
             </div>
           </div>

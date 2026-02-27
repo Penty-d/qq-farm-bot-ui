@@ -161,7 +161,12 @@ function updateOperationLimits(limits) {
                 dayTimes: toNum(limit.day_times),
                 dayTimesLimit: toNum(limit.day_times_lt),
                 dayExpTimes: toNum(limit.day_exp_times),
-                dayExpTimesLimit: toNum(limit.day_exp_times_lt),
+                // proto 字段名: day_ex_times_lt
+                dayExpTimesLimit: toNum(
+                    limit.day_ex_times_lt !== undefined
+                        ? limit.day_ex_times_lt
+                        : limit.day_exp_times_lt
+                ),
             };
             operationLimits.set(id, data);
         }
@@ -176,6 +181,10 @@ function canGetExp(opId) {
     if (!limit) return true;  // 没有限制信息时放行，等待农场检查填充数据
     if (limit.dayExpTimesLimit <= 0) return true;  // 没有经验上限
     return limit.dayExpTimes < limit.dayExpTimesLimit;
+}
+
+function hasAnyHelpExpRoom() {
+    return canGetExp(10005) || canGetExp(10006) || canGetExp(10007);
 }
 
 /**
@@ -227,7 +236,7 @@ async function helpWater(friendGid, landIds, stopWhenExpLimit = false) {
     if (stopWhenExpLimit) {
         await sleep(200);
         const afterExp = toNum((getUserState() || {}).exp);
-        if (afterExp < beforeExp) autoDisableHelpByExpLimit();
+        if (afterExp <= beforeExp) autoDisableHelpByExpLimit();
     }
     return reply;
 }
@@ -244,7 +253,7 @@ async function helpWeed(friendGid, landIds, stopWhenExpLimit = false) {
     if (stopWhenExpLimit) {
         await sleep(200);
         const afterExp = toNum((getUserState() || {}).exp);
-        if (afterExp < beforeExp) autoDisableHelpByExpLimit();
+        if (afterExp <= beforeExp) autoDisableHelpByExpLimit();
     }
     return reply;
 }
@@ -261,7 +270,7 @@ async function helpInsecticide(friendGid, landIds, stopWhenExpLimit = false) {
     if (stopWhenExpLimit) {
         await sleep(200);
         const afterExp = toNum((getUserState() || {}).exp);
-        if (afterExp < beforeExp) autoDisableHelpByExpLimit();
+        if (afterExp <= beforeExp) autoDisableHelpByExpLimit();
     }
     return reply;
 }
@@ -702,6 +711,8 @@ async function visitFriend(friend, totalActions, myGid) {
         // 自动帮忙关闭，直接跳过帮助操作
     } else if (stopWhenExpLimit && !canGetHelpExp) {
         // 今日已达到经验上限后停止帮忙
+    } else if (stopWhenExpLimit && !hasAnyHelpExpRoom()) {
+        autoDisableHelpByExpLimit();
     } else {
         const helpOps = [
             { id: 10005, list: status.needWeed, fn: helpWeed, key: 'weed', name: '草', record: 'helpWeed' },

@@ -1,3 +1,4 @@
+const consola = require('consola');
 const process = require('node:process');
 /**
  * 统计工具 - 重构版
@@ -79,10 +80,10 @@ function updateStats(currentGold, currentExp) {
     if (currentGold > lastState.gold) {
         const delta = currentGold - lastState.gold;
         session.lastGoldGain = delta;
-        // console.warn(`[Stats] Gold +${delta}`);
+        // consola.info(`[Stats] Gold +${delta}`);
     } else if (currentGold < lastState.gold) {
         // 消费了金币，不计入收益，但要更新 lastState
-        // console.warn(`[Stats] Gold -${lastState.gold - currentGold}`);
+        // consola.info(`[Stats] Gold -${lastState.gold - currentGold}`);
         session.lastGoldGain = 0;
     }
     lastState.gold = currentGold;
@@ -94,11 +95,11 @@ function updateStats(currentGold, currentExp) {
         // 防抖: 如果 1秒内 增加了完全相同的 delta，视为重复包忽略
         const now = Date.now();
         if (delta === session.lastExpGain && (now - (session.lastExpTime || 0) < 1000)) {
-            console.warn(`[系统] 忽略重复经验增量 +${delta}`);
+            consola.info(`[系统] 忽略重复经验增量 +${delta}`);
         } else {
             session.lastExpGain = delta;
             session.lastExpTime = now;
-            console.warn(`[系统] 经验 +${delta} (总计: ${currentExp})`);
+            consola.info(`[系统] 经验 +${delta} (总计: ${currentExp})`);
         }
     } else {
         session.lastExpGain = 0;

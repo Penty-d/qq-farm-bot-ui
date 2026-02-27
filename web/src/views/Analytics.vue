@@ -171,7 +171,7 @@ function formatGrowTime(seconds: any) {
               <span class="text-purple-600 font-bold dark:text-purple-400">{{ item.expPerHour }}</span>
             </div>
             <div class="flex flex-col">
-              <span class="text-xs text-gray-500">利润/时</span>
+              <span class="text-xs text-gray-500">净利润/时</span>
               <span class="text-amber-500 font-bold">{{ item.profitPerHour ?? '-' }}</span>
             </div>
             <div class="flex flex-col">

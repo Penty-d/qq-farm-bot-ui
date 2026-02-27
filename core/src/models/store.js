@@ -1,3 +1,4 @@
+const consola = require('consola');
 const process = require('node:process');
 /**
  * 运行时存储 - 自动化开关、种子偏好、账号管理
@@ -319,7 +320,7 @@ function saveGlobalConfig() {
         const newJson = JSON.stringify(globalConfig, null, 2);
         
         if (oldJson !== newJson) {
-            console.warn('[系统] 正在保存配置到:', STORE_FILE);
+            consola.info('[系统] 正在保存配置到:', STORE_FILE);
             writeJsonFileAtomic(STORE_FILE, globalConfig);
         }
     } catch (e) {

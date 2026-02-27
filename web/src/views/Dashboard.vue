@@ -619,11 +619,22 @@ useIntervalFn(updateCountdowns, 1000)
             <div class="i-carbon-chart-column" />
             <span>今日统计</span>
           </h3>
-          <div class="grid grid-cols-2 gap-2 2xl:gap-3">
+          <div v-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
+            <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
+            <div class="flex flex-col">
+              <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
+                账号未登录
+              </div>
+              <div class="mt-1 text-sm text-gray-400">
+                请先运行账号或检查网络连接
+              </div>
+            </div>
+          </div>
+          <div v-else class="grid grid-cols-2 gap-2 2xl:gap-3">
             <div
               v-for="(val, key) in (status?.operations || {})"
               :key="key"
-              class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/30 2xl:px-4 2xl:py-3"
+              class="flex items-center justify-between rounded bg-gray-50 px-3 py-2 dark:bg-gray-700/30"
             >
               <div class="flex items-center gap-2">
                 <div class="text-base 2xl:text-lg" :class="[getOpIcon(key), getOpColor(key)]" />

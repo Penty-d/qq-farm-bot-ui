@@ -35,14 +35,14 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div class="w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900" style="height: 100dvh">
+  <div class="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
     <div class="max-w-md w-full rounded-xl bg-white p-8 shadow-lg space-y-6 dark:bg-gray-800">
-      <div class="text-center">
-        <h1 class="text-2xl text-gray-900 font-bold dark:text-white">
-          QQ农场智能助手 - 登录面板
+      <div class="mb-8 py-4 text-center">
+        <h1 class="text-3xl text-gray-900 font-bold tracking-tight dark:text-white">
+          QQ农场智能助手
         </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          请输入管理密码
+        <p class="mt-3 text-sm text-gray-500 tracking-widest uppercase dark:text-gray-400">
+          管理面板
         </p>
       </div>
       <form class="space-y-4" @submit.prevent="handleLogin">
@@ -51,8 +51,7 @@ async function handleLogin() {
             id="password"
             v-model="password"
             type="password"
-            label="密码"
-            placeholder="管理密码"
+            placeholder="请输入管理密码"
             required
           />
         </div>

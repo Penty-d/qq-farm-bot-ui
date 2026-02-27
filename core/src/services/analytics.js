@@ -2,6 +2,7 @@
  * 数据分析模块 - 作物效率分析
  */
 
+const consola = require('consola');
 const { getAllPlants, getFruitPrice, getSeedPrice, getItemImageById } = require('../config/gameConfig');
 
 function parseGrowTime(growPhases) {
@@ -36,7 +37,7 @@ function formatTime(seconds) {
 
 function getPlantRankings(sortBy = 'exp') {
     const plants = getAllPlants();
-    console.warn(`[分析] 获取到 ${plants.length} 种作物`);
+    consola.info(`[分析] 获取到 ${plants.length} 种作物`);
     
     // 筛选普通作物
     const normalPlants = plants.filter(p => {
@@ -45,7 +46,7 @@ function getPlantRankings(sortBy = 'exp') {
         // 放宽条件，只要有种子ID且有生长阶段数据
         return p.seed_id > 0 && p.grow_phases;
     });
-    console.warn(`[分析] 筛选出 ${normalPlants.length} 种普通作物`);
+    consola.info(`[分析] 筛选出 ${normalPlants.length} 种作物`);
 
 
 

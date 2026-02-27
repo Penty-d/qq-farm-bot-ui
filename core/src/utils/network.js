@@ -1,4 +1,5 @@
 const { Buffer } = require('node:buffer');
+const consola = require('consola');
 const EventEmitter = require('node:events');
 /**
  * WebSocket 网络层 - 连接/消息编解码/登录/心跳
@@ -370,18 +371,18 @@ function sendLogin(onLoginSuccess) {
 
                 log('系统', `登录成功: ${userState.name} (Lv${userState.level})`);
 
-                console.warn('');
-                console.warn('========== 登录成功 ==========');
-                console.warn(`  GID:    ${userState.gid}`);
-                console.warn(`  昵称:   ${userState.name}`);
-                console.warn(`  等级:   ${userState.level}`);
-                console.warn(`  金币:   ${userState.gold}`);
+                consola.info('');
+                consola.info('========== 登录成功 ==========');
+                consola.info(`  GID:    ${userState.gid}`);
+                consola.info(`  昵称:   ${userState.name}`);
+                consola.info(`  等级:   ${userState.level}`);
+                consola.info(`  金币:   ${userState.gold}`);
                 if (reply.time_now_millis) {
                     syncServerTime(toNum(reply.time_now_millis));
-                    console.warn(`  时间:   ${new Date(toNum(reply.time_now_millis)).toLocaleString()}`);
+                    consola.info(`  时间:   ${new Date(toNum(reply.time_now_millis)).toLocaleString()}`);
                 }
-                console.warn('===============================');
-                console.warn('');
+                consola.info('===============================');
+                consola.info('');
             }
 
             startHeartbeat();
@@ -462,7 +463,7 @@ function connect(code, onLoginSuccess) {
     });
 
     ws.on('close', (code, _reason) => {
-        console.warn(`[WS] 连接关闭 (code=${code})`);
+        consola.warn(`[WS] 连接关闭 (code=${code})`);
         cleanup();
         // 自动重连：延迟 5s 后重试，复用已保存的登录回调
         if (savedLoginCallback) {

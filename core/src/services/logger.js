@@ -1,3 +1,4 @@
+const consola = require('consola');
 const fs = require('node:fs');
 const path = require('node:path');
 const process = require('node:process');
@@ -77,9 +78,9 @@ function createConsoleFallback(moduleName) {
         const safeMeta = sanitizeMeta(meta);
         appendFallbackLog(level, moduleName, safeMsg, safeMeta);
         if (safeMeta && Object.keys(safeMeta).length > 0) {
-            console.warn(`[${ts}] [${level}] [${moduleName}] ${safeMsg} ${JSON.stringify(safeMeta)}`);
+            consola.info(`[${ts}] [${level}] [${moduleName}] ${safeMsg} ${JSON.stringify(safeMeta)}`);
         } else {
-            console.warn(`[${ts}] [${level}] [${moduleName}] ${safeMsg}`);
+            consola.info(`[${ts}] [${level}] [${moduleName}] ${safeMsg}`);
         }
     };
     return {

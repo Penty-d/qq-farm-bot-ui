@@ -3,6 +3,7 @@
  * 从 gameConfig 目录加载配置数据
  */
 
+const consola = require('consola');
 const fs = require('node:fs');
 const path = require('node:path');
 const { getResourcePath } = require('./runtime-paths');
@@ -38,10 +39,10 @@ function loadConfigs() {
             for (const item of roleLevelConfig) {
                 levelExpTable[item.level] = item.exp;
             }
-            console.warn(`[配置] 已加载等级经验表 (${roleLevelConfig.length} 级)`);
+            consola.info(`[配置] 已加载等级经验表 (${roleLevelConfig.length} 级)`);
         }
     } catch (e) {
-        console.warn('[配置] 加载 RoleLevel.json 失败:', e.message);
+        consola.warn('[配置] 加载 RoleLevel.json 失败:', e.message);
     }
     
     // 加载植物配置
@@ -61,10 +62,10 @@ function loadConfigs() {
                     fruitToPlant.set(plant.fruit.id, plant);
                 }
             }
-            console.warn(`[配置] 已加载植物配置 (${plantConfig.length} 种)`);
+            consola.info(`[配置] 已加载植物配置 (${plantConfig.length} 种)`);
         }
     } catch (e) {
-        console.warn('[配置] 加载 Plant.json 失败:', e.message);
+        consola.warn('[配置] 加载 Plant.json 失败:', e.message);
     }
 
     // 加载物品配置（含种子/果实价格）
@@ -82,10 +83,10 @@ function loadConfigs() {
                     seedItemMap.set(id, item);
                 }
             }
-            console.warn(`[配置] 已加载物品配置 (${itemInfoConfig.length} 项)`);
+            consola.info(`[配置] 已加载物品配置 (${itemInfoConfig.length} 项)`);
         }
     } catch (e) {
-        console.warn('[配置] 加载 ItemInfo.json 失败:', e.message);
+        consola.warn('[配置] 加载 ItemInfo.json 失败:', e.message);
     }
 
     // 加载种子图片映射（seed_images_named）
@@ -117,10 +118,10 @@ function loadConfigs() {
                     }
                 }
             }
-            console.warn(`[配置] 已加载种子图片映射 (${seedImageMap.size} 项)`);
+            consola.info(`[配置] 已加载种子图片映射 (${seedImageMap.size} 项)`);
         }
     } catch (e) {
-        console.warn('[配置] 加载 seed_images_named 失败:', e.message);
+        consola.warn('[配置] 加载 seed_images_named 失败:', e.message);
     }
 }
 

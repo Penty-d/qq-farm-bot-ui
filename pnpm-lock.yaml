@@ -47,6 +47,9 @@ importers:
       '@types/node':
         specifier: ^24.10.1
         version: 24.10.13
+      consola:
+        specifier: ^3.4.2
+        version: 3.4.2
       eslint:
         specifier: ^9.39.1
         version: 9.39.3(jiti@2.6.1)

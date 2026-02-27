@@ -9,7 +9,7 @@ import RemarkModal from '@/components/RemarkModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 import { menuRoutes } from '@/router/menu'
-import { useAccountStore } from '@/stores/account'
+import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
 
@@ -88,6 +88,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   statusStore.disconnectRealtime()
 })
+
+const platform = computed(() => getPlatformLabel(currentAccount.value?.platform))
 
 useIntervalFn(checkConnection, 30000)
 useIntervalFn(() => {
@@ -246,9 +248,18 @@ watch(
               <span class="w-full truncate text-left text-sm font-medium">
                 {{ displayName }}
               </span>
-              <span class="w-full truncate text-left text-xs text-gray-400">
-                {{ currentAccount?.uin || currentAccount?.id || '未选择' }}
-              </span>
+              <div class="mt-0.5 flex items-center gap-1.5">
+                <span
+                  v-if="platform"
+                  class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                  :class="getPlatformClass(currentAccount?.platform)"
+                >
+                  {{ platform }}
+                </span>
+                <span class="truncate text-xs text-gray-400">
+                  {{ currentAccount?.uin || currentAccount?.id || '未选择' }}
+                </span>
+              </div>
             </div>
           </div>
           <div
@@ -284,7 +295,16 @@ watch(
                   <span class="w-full truncate text-left text-sm font-medium">
                     {{ acc.name || acc.nick || acc.uin }}
                   </span>
-                  <span class="text-xs text-gray-400">{{ acc.uin || acc.id }}</span>
+                  <div class="flex items-center gap-1.5">
+                    <span
+                      v-if="platform"
+                      class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                      :class="getPlatformClass(acc.platform)"
+                    >
+                      {{ getPlatformLabel(acc.platform) }}
+                    </span>
+                    <span class="text-xs text-gray-400">{{ acc.uin || acc.id }}</span>
+                  </div>
                 </div>
                 <div class="flex items-center gap-1">
                   <button

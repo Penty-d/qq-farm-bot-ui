@@ -453,6 +453,15 @@ async function startBot(config) {
         setInitialValues(Number(latest.gold || 0), Number(latest.exp || 0), Number(latest.coupon || 0));
         resetSessionGains();
 
+        // 登录后立即出售背包中已有的果实（处理登录前手动收获的果实）
+        if (getAutomation().sell) {
+            try {
+                await sellAllFruits();
+            } catch (e) {
+                log('仓库', `登录后自动出售失败: ${e.message}`, { module: 'warehouse', event: 'sell_on_login_error', result: 'error' });
+            }
+        }
+
         // 登录成功后启动各模块
         await processInviteCodes();
         if (getAutomation().fertilizer_gift) {

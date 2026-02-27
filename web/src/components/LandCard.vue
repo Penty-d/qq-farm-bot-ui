@@ -121,6 +121,9 @@ function getLandTypeName(level: number) {
       <span v-if="land.needBug" class="rounded bg-red-100 px-0.5 text-red-700 dark:bg-red-900/30 dark:text-red-400">虫</span>
       <!-- For friends view -->
       <span v-if="land.status === 'harvestable'" class="rounded bg-orange-100 px-0.5 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">可偷</span>
+      <!-- Stolen count indicator -->
+      <span v-if="land.stolenNum > 0" class="rounded bg-purple-100 px-0.5 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">被偷{{ land.stolenNum }}</span>
+      <span v-else-if="land.status === 'harvestable' && land.stolenNum === 0" class="rounded bg-gray-100 px-0.5 text-gray-600 dark:bg-gray-700/50 dark:text-gray-400">未偷</span>
     </div>
   </div>
 </template>

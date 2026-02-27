@@ -46,6 +46,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         open_server_gift: true,
         sell: true,
         fertilizer: 'both',
+        wait_for_steal: true, // 是否等被偷后再收获（默认开启）
     },
     plantingStrategy: 'preferred',
     preferredSeedId: 0,

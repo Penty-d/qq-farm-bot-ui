@@ -425,6 +425,7 @@ async function getLandsDetail() {
             const needWater = (toNum(plant.dry_num) > 0) || (toTimeSec(currentPhase.dry_time) > 0 && toTimeSec(currentPhase.dry_time) <= nowSec);
             const needWeed = (plant.weed_owners && plant.weed_owners.length > 0) || (toTimeSec(currentPhase.weeds_time) > 0 && toTimeSec(currentPhase.weeds_time) <= nowSec);
             const needBug = (plant.insect_owners && plant.insect_owners.length > 0) || (toTimeSec(currentPhase.insect_time) > 0 && toTimeSec(currentPhase.insect_time) <= nowSec);
+            const stolenNum = toNum(plant.stole_num);
 
             lands.push({
                 id,
@@ -439,6 +440,7 @@ async function getLandsDetail() {
                 needWeed,
                 needBug,
                 stealable: !!plant.stealable,
+                stolenNum,
                 level,
                 maxLevel,
                 landsLevel,
@@ -636,7 +638,7 @@ function analyzeLands(lands) {
     const result = {
         harvestable: [], needWater: [], needWeed: [], needBug: [],
         growing: [], empty: [], dead: [], unlockable: [], upgradable: [],
-        harvestableInfo: [],
+        harvestableInfo: [], notStolen: [], // notStolen 记录未被偷过的可收获土地
     };
 
     const nowSec = getServerTimeSec();
@@ -680,12 +682,18 @@ function analyzeLands(lands) {
             const plantId = toNum(plant.id);
             const plantNameFromConfig = getPlantName(plantId);
             const plantExp = getPlantExp(plantId);
+            const stolenNum = toNum(plant.stole_num);
             result.harvestableInfo.push({
                 landId: id,
                 plantId,
                 name: plantNameFromConfig || plantName,
                 exp: plantExp,
+                stolenNum,
             });
+            // 如果配置了等偷，记录未被偷过的土地
+            if (stolenNum === 0) {
+                result.notStolen.push(id);
+            }
             continue;
         }
 
@@ -779,22 +787,38 @@ async function runFarmOperation(opType) {
     // 执行收获
     let harvestedLandIds = [];
     if (opType === 'all' || opType === 'harvest') {
-        if (status.harvestable.length > 0) {
+        // 如果开启了等偷配置，过滤掉未被偷过的土地
+        let landsToHarvest = status.harvestable;
+        if (isAutomationOn('wait_for_steal') && status.notStolen && status.notStolen.length > 0) {
+            landsToHarvest = status.harvestable.filter(id => !status.notStolen.includes(id));
+            const skippedCount = status.harvestable.length - landsToHarvest.length;
+            if (skippedCount > 0) {
+                log('收获', `跳过 ${skippedCount} 块未被偷过的土地，等待好友偷取`, {
+                    module: 'farm',
+                    event: 'harvest_crop',
+                    result: 'skip',
+                    skippedCount,
+                    skippedLands: [...status.notStolen],
+                });
+            }
+        }
+
+        if (landsToHarvest.length > 0) {
             try {
-                await harvest(status.harvestable);
-                log('收获', `收获完成 ${status.harvestable.length} 块土地`, {
+                await harvest(landsToHarvest);
+                log('收获', `收获完成 ${landsToHarvest.length} 块土地`, {
                     module: 'farm',
                     event: 'harvest_crop',
                     result: 'ok',
-                    count: status.harvestable.length,
-                    landIds: [...status.harvestable],
+                    count: landsToHarvest.length,
+                    landIds: [...landsToHarvest],
                 });
-                actions.push(`收获${status.harvestable.length}`);
-                recordOperation('harvest', status.harvestable.length);
-                harvestedLandIds = [...status.harvestable];
+                actions.push(`收获${landsToHarvest.length}`);
+                recordOperation('harvest', landsToHarvest.length);
+                harvestedLandIds = [...landsToHarvest];
                 networkEvents.emit('farmHarvested', {
-                    count: status.harvestable.length,
-                    landIds: [...status.harvestable],
+                    count: landsToHarvest.length,
+                    landIds: [...landsToHarvest],
                     opType,
                 });
             } catch (e) {

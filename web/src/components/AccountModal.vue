@@ -36,7 +36,7 @@ const { pause: stopQRCheck, resume: startQRCheck } = useIntervalFn(async () => {
       if (status === 'OK') {
         // Login success
         stopQRCheck()
-        qrStatus.value = '登录成功!'
+        qrStatus.value = '登录成功'
         // Auto fill form and submit
         const { uin, code: authCode, nickname } = res.data.data
 
@@ -62,7 +62,7 @@ const { pause: stopQRCheck, resume: startQRCheck } = useIntervalFn(async () => {
         stopQRCheck()
       }
       else if (status === 'Wait') {
-        qrStatus.value = '等待扫码...'
+        qrStatus.value = '等待扫码'
       }
       else {
         qrStatus.value = `错误: ${res.data.data.error}`
@@ -115,12 +115,12 @@ function openQRCodeLoginUrl() {
 
   // Mobile Deep Link logic
   try {
-    const b64 = btoa(unescape(encodeURIComponent(url)))
+    const b64 = btoa(decodeURIComponent(encodeURIComponent(url)))
     const qqDeepLink = `mqqapi://forward/url?url_prefix=${encodeURIComponent(b64)}&version=1&src_type=web`
     window.location.href = qqDeepLink
   }
   catch (e) {
-    console.error('Deep link error:', e)
+    console.error('打开二维码登录链接失败:', e)
     window.location.href = url
   }
 }
@@ -149,7 +149,7 @@ async function addAccount(data: any) {
 async function submitManual() {
   errorMessage.value = ''
   if (!form.code) {
-    errorMessage.value = '请输入Code 或 先扫码'
+    errorMessage.value = '请输入Code 或 进行扫码'
     return
   }
 
@@ -166,12 +166,38 @@ async function submitManual() {
     form.code = code // Update UI
   }
 
-  const payload = {
-    id: props.editData?.id, // If editing
-    name: form.name,
-    code,
-    platform: form.platform,
-    loginType: 'manual',
+  // 检查是否仅修改了备注
+  let payload = {}
+  if (props.editData) {
+    // 编辑模式：检查是否只修改了备注
+    const onlyNameChanged = form.name !== props.editData.name && 
+                           form.code === (props.editData.code || '') && 
+                           form.platform === (props.editData.platform || 'qq')
+    
+    if (onlyNameChanged) {
+      // 仅修改了备注，只发送 id 和 name
+      payload = {
+        id: props.editData.id,
+        name: form.name,
+      }
+    } else {
+      // 修改了其他字段，发送完整 payload
+      payload = {
+        id: props.editData.id,
+        name: form.name,
+        code,
+        platform: form.platform,
+        loginType: 'manual',
+      }
+    }
+  } else {
+    // 新增模式，发送完整 payload
+    payload = {
+      name: form.name,
+      code,
+      platform: form.platform,
+      loginType: 'manual',
+    }
   }
 
   await addAccount(payload)
@@ -258,7 +284,7 @@ watch(() => props.show, (newVal) => {
           </div>
           <div v-else class="h-48 w-48 flex items-center justify-center rounded bg-gray-100 text-gray-400 dark:bg-gray-700">
             <div v-if="loading" i-svg-spinners-90-ring-with-bg class="text-3xl" />
-            <span v-else>二维码区域</span>
+            <span v-else>二维码已过期</span>
           </div>
           <p class="text-sm text-gray-600 dark:text-gray-400">
             {{ qrStatus }}
@@ -295,6 +321,7 @@ watch(() => props.show, (newVal) => {
           />
 
           <BaseSelect
+            v-if="!editData"
             v-model="form.platform"
             label="平台"
             :options="[

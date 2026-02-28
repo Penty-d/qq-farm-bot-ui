@@ -232,7 +232,7 @@ export const useStatusStore = defineStore('status', () => {
       }
     }
     catch (e) {
-      console.error('Failed to fetch daily gifts', e)
+      console.error('获取每日奖励失败', e)
     }
   }
 

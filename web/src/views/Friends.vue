@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import LandCard from '@/components/LandCard.vue'
 import { useAccountStore } from '@/stores/account'
@@ -21,6 +21,7 @@ const confirmMessage = ref('')
 const confirmLoading = ref(false)
 const pendingAction = ref<(() => Promise<void>) | null>(null)
 const avatarErrorKeys = ref<Set<string>>(new Set())
+const searchKeyword = ref('')
 
 function confirmAction(msg: string, action: () => Promise<void>) {
   confirmMessage.value = msg
@@ -47,6 +48,18 @@ async function onConfirm() {
 
 // Track expanded friends
 const expandedFriends = ref<Set<string>>(new Set())
+const filteredFriends = computed(() => {
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  if (!keyword)
+    return friends.value
+
+  return friends.value.filter((friend: any) => {
+    const name = String(friend?.name || '').toLowerCase()
+    const gid = String(friend?.gid || '')
+    const uin = String(friend?.uin || '')
+    return name.includes(keyword) || gid.includes(keyword) || uin.includes(keyword)
+  })
+})
 
 async function loadFriends() {
   if (currentAccountId.value) {
@@ -84,11 +97,6 @@ watch(currentAccountId, () => {
   expandedFriends.value.clear()
   loadFriends()
 })
-
-// 每 30 秒自动刷新好友列表
-useIntervalFn(() => {
-  loadFriends()
-}, 30000)
 
 function toggleFriend(friendId: string) {
   if (expandedFriends.value.has(friendId)) {
@@ -175,7 +183,22 @@ function handleFriendAvatarError(friend: any) {
         好友
       </h2>
       <div v-if="friends.length" class="text-sm text-gray-500">
-        共 {{ friends.length }} 名好友
+        <span v-if="searchKeyword.trim()">筛选 {{ filteredFriends.length }} / {{ friends.length }} 名好友</span>
+        <span v-else>共 {{ friends.length }} 名好友</span>
+      </div>
+    </div>
+
+    <div v-if="status?.connection?.connected && friends.length" class="mb-4">
+      <div class="relative">
+        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+          <div class="i-carbon-search" />
+        </div>
+        <input
+          v-model="searchKeyword"
+          type="text"
+          class="w-full border border-gray-200 rounded-lg bg-white py-2 pl-10 pr-3 text-sm outline-none transition dark:border-gray-700 focus:border-blue-400 dark:bg-gray-800"
+          placeholder="搜索好友昵称 / GID / UIN"
+        >
       </div>
     </div>
 
@@ -203,9 +226,13 @@ function handleFriendAvatarError(friend: any) {
       暂无好友或数据加载失败
     </div>
 
+    <div v-else-if="filteredFriends.length === 0" class="rounded-lg bg-white p-8 text-center text-gray-500 shadow dark:bg-gray-800">
+      未找到匹配的好友
+    </div>
+
     <div v-else class="space-y-4">
       <div
-        v-for="friend in friends"
+        v-for="friend in filteredFriends"
         :key="friend.gid"
         class="overflow-hidden rounded-lg bg-white shadow dark:bg-gray-800"
       >

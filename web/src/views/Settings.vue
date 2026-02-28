@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
+import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
@@ -9,7 +10,6 @@ import BaseSwitch from '@/components/ui/BaseSwitch.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
-import api from '@/api'
 
 const settingStore = useSettingStore()
 const accountStore = useAccountStore()
@@ -215,14 +215,8 @@ const channelOptions = [
   { label: 'WxPusher', value: 'wxpusher' },
 ]
 
-const reloginUrlModeOptions = [
-  { label: '不需要', value: 'none' },
-  { label: 'QQ直链', value: 'qq_link' },
-  { label: '二维码链接', value: 'qr_link' },
-]
-
-// 推送渠道官方文档链接映射
-const channelDocs: Record<string, string> = {
+const CHANNEL_DOCS: Record<string, string> = {
+  webhook: '',
   qmsg: 'https://qmsg.zendee.cn/',
   serverchan: 'https://sct.ftqq.com/',
   pushplus: 'https://www.pushplus.plus/',
@@ -242,7 +236,24 @@ const channelDocs: Record<string, string> = {
   discord: 'https://discord.com/developers/docs/resources/webhook#execute-webhook',
   wxpusher: 'https://wxpusher.zjiecode.com/docs/#/',
 }
-const channelDocUrl = computed(() => channelDocs[localOffline.value.channel] || '')
+
+const reloginUrlModeOptions = [
+  { label: '不需要', value: 'none' },
+  { label: 'QQ直链', value: 'qq_link' },
+  { label: '二维码链接', value: 'qr_link' },
+]
+
+const currentChannelDocUrl = computed(() => {
+  const key = String(localOffline.value.channel || '').trim().toLowerCase()
+  return CHANNEL_DOCS[key] || ''
+})
+
+function openChannelDocs() {
+  const url = currentChannelDocUrl.value
+  if (!url)
+    return
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
 
 const preferredSeedOptions = computed(() => {
   const options = [{ label: '自动选择', value: 0 }]
@@ -408,10 +419,14 @@ async function handleSaveOffline() {
               label="优先种植种子"
               :options="preferredSeedOptions"
             />
-            <div v-else class="flex flex-col gap-1">
-              <span class="text-xs text-gray-500 dark:text-gray-400">策略选种预览</span>
-              <div class="flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600 dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-300">
-                {{ strategyPreviewLabel ?? '加载中...' }}
+            <!-- 预览区域：与 BaseSelect 同结构同样式，避免切换策略时布局跳动 -->
+            <div v-else class="flex flex-col gap-1.5">
+              <label class="text-sm text-gray-700 font-medium dark:text-gray-300">策略选种预览</label>
+              <div
+                class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400"
+              >
+                <span class="truncate">{{ strategyPreviewLabel ?? '加载中...' }}</span>
+                <div class="i-carbon-chevron-down shrink-0 text-lg text-gray-400" />
               </div>
             </div>
           </div>
@@ -599,23 +614,22 @@ async function handleSaveOffline() {
         <!-- Offline Content -->
         <div class="flex-1 p-4 space-y-3">
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div class="flex items-center gap-2">
+            <div class="flex flex-col gap-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-sm text-gray-700 font-medium dark:text-gray-300">推送渠道</span>
+                <BaseButton
+                  variant="text"
+                  size="sm"
+                  :disabled="!currentChannelDocUrl"
+                  @click="openChannelDocs"
+                >
+                  官网
+                </BaseButton>
+              </div>
               <BaseSelect
                 v-model="localOffline.channel"
-                label="推送渠道"
                 :options="channelOptions"
-                class="flex-1"
               />
-              <a
-                v-if="channelDocUrl"
-                :href="channelDocUrl"
-                target="_blank"
-                rel="noopener"
-                class="mt-5 inline-flex items-center gap-1 text-xs text-blue-500 whitespace-nowrap hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <div class="i-carbon-launch text-xs" />
-                推送官网
-              </a>
             </div>
             <BaseSelect
               v-model="localOffline.reloginUrlMode"

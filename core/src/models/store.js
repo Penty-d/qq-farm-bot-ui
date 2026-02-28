@@ -45,7 +45,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         month_card: true,
         open_server_gift: true,
         sell: true,
-        fertilizer: 'both',
+        fertilizer: 'none',
     },
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
@@ -234,6 +234,21 @@ function removeAccountConfig(accountId) {
         delete globalConfig.accountConfigs[id];
         saveGlobalConfig();
     }
+}
+
+function ensureAccountConfig(accountId, options = {}) {
+    const id = resolveAccountId(accountId);
+    if (!id) return null;
+    if (globalConfig.accountConfigs[id]) {
+        return cloneAccountConfig(globalConfig.accountConfigs[id]);
+    }
+    globalConfig.accountConfigs[id] = normalizeAccountConfig(globalConfig.defaultAccountConfig, accountFallbackConfig);
+    // 新账号默认不施肥（不受历史 defaultAccountConfig 旧值影响）
+    if (globalConfig.accountConfigs[id] && globalConfig.accountConfigs[id].automation) {
+        globalConfig.accountConfigs[id].automation.fertilizer = 'none';
+    }
+    if (options.persist !== false) saveGlobalConfig();
+    return cloneAccountConfig(globalConfig.accountConfigs[id]);
 }
 
 // 加载全局配置
@@ -523,15 +538,18 @@ function normalizeAccountsData(raw) {
 
 function addOrUpdateAccount(acc) {
     const data = normalizeAccountsData(loadAccounts());
+    let touchedAccountId = '';
     if (acc.id) {
         const idx = data.accounts.findIndex(a => a.id === acc.id);
         if (idx >= 0) {
             data.accounts[idx] = { ...data.accounts[idx], ...acc, name: acc.name !== undefined ? acc.name : data.accounts[idx].name, updatedAt: Date.now() };
+            touchedAccountId = String(data.accounts[idx].id || '');
         }
     } else {
         const id = data.nextId++;
+        touchedAccountId = String(id);
         data.accounts.push({
-            id: String(id),
+            id: touchedAccountId,
             name: acc.name || `账号${id}`,
             code: acc.code || '',
             platform: acc.platform || 'qq',
@@ -543,6 +561,9 @@ function addOrUpdateAccount(acc) {
         });
     }
     saveAccounts(data);
+    if (touchedAccountId) {
+        ensureAccountConfig(touchedAccountId);
+    }
     return data;
 }
 

@@ -1,8 +1,10 @@
-const process = require('node:process');
 /**
  * 统计工具 - 重构版
  * 基于状态变化累加收益，而非依赖初始值快照
  */
+
+// 账号 worker 启动时间（每个 worker 独立）
+const workerBootAtMs = Date.now();
 
 // 操作计数
 const operations = {
@@ -166,7 +168,7 @@ function getStats(statusData, userState, connected, limits) {
             exp: currentExp,
             platform: statusObj.platform || userObj.platform || 'qq',
         },
-        uptime: process.uptime(),
+        uptime: Math.max(0, Math.floor((Date.now() - workerBootAtMs) / 1000)),
         operations: operationsSnapshot,
         sessionExpGained: session.expGained,
         sessionGoldGained: session.goldGained,

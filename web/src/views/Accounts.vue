@@ -6,11 +6,11 @@ import { useRouter } from 'vue-router'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { useAccountStore } from '@/stores/account'
+import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 
 const router = useRouter()
 const accountStore = useAccountStore()
-const { accounts, loading } = storeToRefs(accountStore)
+const { accounts, loading, currentAccountId } = storeToRefs(accountStore)
 
 const showModal = ref(false)
 const showDeleteConfirm = ref(false)
@@ -72,6 +72,12 @@ async function toggleAccount(account: any) {
 function handleSaved() {
   accountStore.fetchAccounts()
 }
+
+function selectAccount(account: any) {
+  if (!account || !account.id)
+    return
+  accountStore.selectAccount(String(account.id))
+}
 </script>
 
 <template>
@@ -111,7 +117,11 @@ function handleSaved() {
       <div
         v-for="acc in accounts"
         :key="acc.id"
-        class="border border-transparent rounded-lg bg-white p-4 shadow transition-colors hover:border-blue-500 dark:bg-gray-800"
+        class="cursor-pointer border rounded-lg bg-white p-4 shadow transition-all duration-200 dark:bg-gray-800"
+        :class="String(currentAccountId) === String(acc.id)
+          ? 'border-blue-500 ring-2 ring-blue-200/70 bg-blue-50/40 dark:border-blue-400 dark:bg-blue-900/20 dark:ring-blue-400/30'
+          : 'border-transparent hover:border-blue-500'"
+        @click="selectAccount(acc)"
       >
         <div class="mb-4 flex items-start justify-between">
           <div class="flex items-center gap-3">
@@ -123,8 +133,17 @@ function handleSaved() {
               <h3 class="text-lg font-bold">
                 {{ acc.name || acc.nick || acc.id }}
               </h3>
-              <div class="text-sm text-gray-500">
-                QQ: {{ acc.uin || '未绑定' }}
+              <div class="mt-0.5 flex items-center gap-1.5">
+                <span
+                  v-if="acc.platform"
+                  class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                  :class="getPlatformClass(acc.platform)"
+                >
+                  {{ getPlatformLabel(acc.platform) }}
+                </span>
+                <span class="text-sm text-gray-500">
+                  {{ acc.uin || '未绑定' }}
+                </span>
               </div>
             </div>
           </div>
@@ -134,7 +153,7 @@ function handleSaved() {
               size="sm"
               class="w-20 border rounded-full shadow-sm transition-all duration-500 ease-in-out active:scale-95"
               :class="acc.running ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 focus:ring-red-500 active:border-red-300 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/30 dark:focus:ring-red-500 dark:active:border-red-700' : 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100 focus:ring-green-500 active:border-green-300 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30 dark:focus:ring-green-500 dark:active:border-green-700'"
-              @click="toggleAccount(acc)"
+              @click.stop="toggleAccount(acc)"
             >
               <div :class="acc.running ? 'i-carbon-stop-filled' : 'i-carbon-play-filled'" class="mr-1" />
               {{ acc.running ? '停止' : '启动' }}
@@ -155,7 +174,7 @@ function handleSaved() {
               variant="ghost"
               class="!p-2"
               title="设置"
-              @click="openSettings(acc)"
+              @click.stop="openSettings(acc)"
             >
               <div i-carbon-settings />
             </BaseButton>
@@ -163,7 +182,7 @@ function handleSaved() {
               variant="ghost"
               class="!p-2"
               title="编辑"
-              @click="openEditModal(acc)"
+              @click.stop="openEditModal(acc)"
             >
               <div i-carbon-edit />
             </BaseButton>
@@ -171,7 +190,7 @@ function handleSaved() {
               variant="ghost"
               class="text-red-500 !p-2 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300"
               title="删除"
-              @click="handleDelete(acc)"
+              @click.stop="handleDelete(acc)"
             >
               <div i-carbon-trash-can />
             </BaseButton>

@@ -79,6 +79,9 @@ function createDataProvider(options) {
 
         setAutomation: async (accountRef, key, value) => {
             const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) {
+                throw new Error('Missing x-account-id');
+            }
             store.setAutomation(key, value, accountId);
             const rev = nextConfigRevision();
             broadcastConfigToWorkers(accountId);
@@ -89,6 +92,9 @@ function createDataProvider(options) {
         doAnalytics: (accountRef, sortBy) => callWorkerApi(resolveAccountRefId(accountRef), 'getAnalytics', sortBy),
         saveSettings: async (accountRef, payload) => {
             const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) {
+                throw new Error('Missing x-account-id');
+            }
             const body = (payload && typeof payload === 'object') ? payload : {};
             const plantingStrategy = (body.plantingStrategy !== undefined) ? body.plantingStrategy : body.strategy;
             const preferredSeedId = (body.preferredSeedId !== undefined) ? body.preferredSeedId : body.seedId;

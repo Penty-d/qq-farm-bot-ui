@@ -109,7 +109,7 @@ export const useSettingStore = defineStore('setting', () => {
 
   async function saveSettings(accountId: string, newSettings: any) {
     if (!accountId)
-      return { ok: false, error: 'No account selected' }
+      return { ok: false, error: '未选择账号' }
     loading.value = true
     try {
       // 1. Save general settings
@@ -148,7 +148,7 @@ export const useSettingStore = defineStore('setting', () => {
         settings.value.offlineReminder = config
         return { ok: true }
       }
-      return { ok: false, error: 'Failed to save' }
+      return { ok: false, error: '保存失败' }
     }
     finally {
       loading.value = false

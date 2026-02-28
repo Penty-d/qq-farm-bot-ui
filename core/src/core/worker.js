@@ -8,7 +8,7 @@ const { getLevelExpProgress } = require('../config/gameConfig');
 const { getAutomation, getPreferredSeed, getConfigSnapshot, applyConfigSnapshot } = require('../models/store');
 const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
-const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation } = require('../services/farm');
+const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendLandsDetail, doFriendOperation } = require('../services/friend');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -325,6 +325,25 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
                 // 保存设置时 /api/automation 可能触发多次 config_sync，这里做防抖且仅关->开触发
                 workerScheduler.setTimeoutTask('daily_routine_immediate', 400, () => {
                     runDailyRoutines(true).catch(() => null);
+                });
+            }
+
+            const prevFertilizerMode = String(prevAuto && prevAuto.fertilizer ? prevAuto.fertilizer : '').toLowerCase();
+            const nextFertilizerMode = String(nextAuto && nextAuto.fertilizer ? nextAuto.fertilizer : '').toLowerCase();
+            const fertilizerChanged = prevFertilizerMode !== nextFertilizerMode;
+            if (fertilizerChanged && (nextFertilizerMode === 'both' || nextFertilizerMode === 'organic')) {
+                // 保存设置时 /api/automation 可能连续触发多次 config_sync，这里做防抖为一次立即施肥
+                workerScheduler.setTimeoutTask('fertilizer_immediate_after_save', 600, async () => {
+                    if (!loginReady) return;
+                    try {
+                        await runFertilizerByConfig([]);
+                    } catch (e) {
+                        log('施肥', `保存配置后立即施肥失败: ${e.message}`, {
+                            module: 'farm',
+                            event: 'fertilize',
+                            result: 'error',
+                        });
+                    }
                 });
             }
         }

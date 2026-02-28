@@ -105,6 +105,113 @@ async function fertilize(landIds, fertilizerId = NORMAL_FERTILIZER_ID) {
     return successCount;
 }
 
+/**
+ * 有机肥循环施肥:
+ * 按地块顺序 1-2-3-...-1 持续施肥，直到出现失败即停止。
+ */
+async function fertilizeOrganicLoop(landIds) {
+    const ids = (Array.isArray(landIds) ? landIds : []).filter(Boolean);
+    if (ids.length === 0) return 0;
+
+    let successCount = 0;
+    let idx = 0;
+
+    while (true) {
+        const landId = ids[idx];
+        try {
+            const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
+                land_ids: [toLong(landId)],
+                fertilizer_id: toLong(ORGANIC_FERTILIZER_ID),
+            })).finish();
+            await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            successCount++;
+        } catch {
+            // 常见是有机肥耗尽，按需求直接停止
+            break;
+        }
+
+        idx = (idx + 1) % ids.length;
+        await sleep(100);
+    }
+
+    return successCount;
+}
+
+function getOrganicFertilizerTargetsFromLands(lands) {
+    const list = Array.isArray(lands) ? lands : [];
+    const targets = [];
+    for (const land of list) {
+        if (!land || !land.unlocked) continue;
+        const landId = toNum(land.id);
+        if (!landId) continue;
+
+        const plant = land.plant;
+        if (!plant || !plant.phases || plant.phases.length === 0) continue;
+        const currentPhase = getCurrentPhase(plant.phases);
+        if (!currentPhase) continue;
+        if (currentPhase.phase === PlantPhase.DEAD) continue;
+
+        // 服务端有该字段时，<=0 说明该地当前不能再施有机肥
+        if (Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+            const leftTimes = toNum(plant.left_inorc_fert_times);
+            if (leftTimes <= 0) continue;
+        }
+
+        targets.push(landId);
+    }
+    return targets;
+}
+
+async function runFertilizerByConfig(plantedLands = []) {
+    const fertilizerConfig = getAutomation().fertilizer || 'both';
+    const planted = (Array.isArray(plantedLands) ? plantedLands : []).filter(Boolean);
+
+    if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both') {
+        return { normal: 0, organic: 0 };
+    }
+
+    let fertilizedNormal = 0;
+    let fertilizedOrganic = 0;
+
+    if ((fertilizerConfig === 'normal' || fertilizerConfig === 'both') && planted.length > 0) {
+        fertilizedNormal = await fertilize(planted, NORMAL_FERTILIZER_ID);
+        if (fertilizedNormal > 0) {
+            log('施肥', `已为 ${fertilizedNormal}/${planted.length} 块地施无机化肥`, {
+                module: 'farm',
+                event: 'fertilize',
+                result: 'ok',
+                type: 'normal',
+                count: fertilizedNormal,
+            });
+            recordOperation('fertilize', fertilizedNormal);
+        }
+    }
+
+    if (fertilizerConfig === 'organic' || fertilizerConfig === 'both') {
+        let organicTargets = planted;
+        try {
+            const latest = await getAllLands();
+            organicTargets = getOrganicFertilizerTargetsFromLands(latest && latest.lands);
+        } catch (e) {
+            logWarn('施肥', `获取全农场地块失败，回退已种地块: ${e.message}`);
+        }
+
+        fertilizedOrganic = await fertilizeOrganicLoop(organicTargets);
+        if (fertilizedOrganic > 0) {
+            log('施肥', `有机化肥循环施肥完成，共施 ${fertilizedOrganic} 次`, {
+                module: 'farm',
+                event: 'fertilize',
+                result: 'ok',
+                type: 'organic',
+                count: fertilizedOrganic,
+            });
+            recordOperation('fertilize', fertilizedOrganic);
+        }
+    }
+
+    return { normal: fertilizedNormal, organic: fertilizedOrganic };
+}
+
 async function removePlant(landIds) {
     const body = types.RemovePlantRequest.encode(types.RemovePlantRequest.create({
         land_ids: landIds.map(id => toLong(id)),
@@ -607,40 +714,8 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
         logWarn('种植', e.message);
     }
 
-    const fertilizerConfig = getAutomation().fertilizer || 'both';
-
-    // 5. 施肥（逐块拖动，间隔50ms）
-    if (plantedLands.length > 0) {
-        // 先施普通化肥
-        if (fertilizerConfig === 'normal' || fertilizerConfig === 'both') {
-            const fertilizedNormal = await fertilize(plantedLands, NORMAL_FERTILIZER_ID);
-            if (fertilizedNormal > 0) {
-                log('施肥', `已为 ${fertilizedNormal}/${plantedLands.length} 块地施无机化肥`, {
-                    module: 'farm',
-                    event: 'fertilize',
-                    result: 'ok',
-                    type: 'normal',
-                    count: fertilizedNormal,
-                });
-                recordOperation('fertilize', fertilizedNormal);
-            }
-        }
-
-        // 再施有机化肥
-        if (fertilizerConfig === 'organic' || fertilizerConfig === 'both') {
-            const fertilizedOrganic = await fertilize(plantedLands, ORGANIC_FERTILIZER_ID);
-            if (fertilizedOrganic > 0) {
-                log('施肥', `已为 ${fertilizedOrganic}/${plantedLands.length} 块地施有机化肥`, {
-                    module: 'farm',
-                    event: 'fertilize',
-                    result: 'ok',
-                    type: 'organic',
-                    count: fertilizedOrganic,
-                });
-                recordOperation('fertilize', fertilizedOrganic);
-            }
-        }
-    }
+    // 5. 施肥
+    await runFertilizerByConfig(plantedLands);
 }
 
 function getCurrentPhase(phases, debug, landLabel) {
@@ -757,6 +832,100 @@ function analyzeLands(lands) {
     return result;
 }
 
+function buildLandMap(lands) {
+    const map = new Map();
+    const list = Array.isArray(lands) ? lands : [];
+    for (const land of list) {
+        const id = toNum(land && land.id);
+        if (id > 0) map.set(id, land);
+    }
+    return map;
+}
+
+function getLandLifecycleState(land) {
+    if (!land) return 'unknown';
+    const plant = land.plant;
+    if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) {
+        return 'empty';
+    }
+
+    const currentPhase = getCurrentPhase(plant.phases, false, '');
+    if (!currentPhase) return 'empty';
+
+    const phaseVal = toNum(currentPhase.phase);
+    if (phaseVal === PlantPhase.DEAD) return 'dead';
+    if (phaseVal === PlantPhase.UNKNOWN) return 'empty';
+    if (phaseVal >= PlantPhase.SEED && phaseVal <= PlantPhase.MATURE) return 'growing';
+    return 'unknown';
+}
+
+function classifyHarvestedLandsByMap(landIds, landsMap) {
+    const removable = [];
+    const growing = [];
+    const unknown = [];
+    for (const id of landIds) {
+        const land = landsMap.get(id);
+        if (!land) {
+            unknown.push(id);
+            continue;
+        }
+        const state = getLandLifecycleState(land);
+        if (state === 'dead' || state === 'empty') {
+            removable.push(id);
+            continue;
+        }
+        if (state === 'growing') {
+            growing.push(id);
+            continue;
+        }
+        unknown.push(id);
+    }
+    return { removable, growing, unknown };
+}
+
+async function resolveRemovableHarvestedLands(harvestedLandIds, harvestReply) {
+    const ids = Array.isArray(harvestedLandIds) ? harvestedLandIds.filter(Boolean) : [];
+    if (ids.length === 0) {
+        return { removable: [], growing: [], fallbackRemoved: 0 };
+    }
+
+    const replyMap = buildLandMap(harvestReply && harvestReply.land);
+    const firstPass = classifyHarvestedLandsByMap(ids, replyMap);
+    const removable = [...firstPass.removable];
+    const growing = [...firstPass.growing];
+    let unknown = [...firstPass.unknown];
+    let fallbackRemoved = 0;
+
+    if (unknown.length > 0) {
+        try {
+            const latestLandsReply = await getAllLands();
+            const latestMap = buildLandMap(latestLandsReply && latestLandsReply.lands);
+            const secondPass = classifyHarvestedLandsByMap(unknown, latestMap);
+            removable.push(...secondPass.removable);
+            growing.push(...secondPass.growing);
+            unknown = secondPass.unknown;
+        } catch (e) {
+            logWarn('农场', `收后状态补拉失败: ${e.message}`, {
+                module: 'farm',
+                event: 'post_harvest_state_fallback',
+                result: 'error',
+            });
+        }
+    }
+
+    if (unknown.length > 0) {
+        // 按兼容策略：不可判定时保持旧行为，继续铲除
+        removable.push(...unknown);
+        fallbackRemoved = unknown.length;
+    }
+
+    return {
+        removable: [...new Set(removable)],
+        growing: [...new Set(growing)],
+        fallbackRemoved,
+    };
+}
+
 async function checkFarm() {
     const state = getUserState();
     if (isCheckingFarm || !state.gid || !isAutomationOn('farm')) return false;
@@ -822,10 +991,11 @@ async function runFarmOperation(opType) {
 
     // 执行收获
     let harvestedLandIds = [];
+    let harvestReply = null;
     if (opType === 'all' || opType === 'harvest') {
         if (status.harvestable.length > 0) {
             try {
-                await harvest(status.harvestable);
+                harvestReply = await harvest(status.harvestable);
                 log('收获', `收获完成 ${status.harvestable.length} 块土地`, {
                     module: 'farm',
                     event: 'harvest_crop',
@@ -853,8 +1023,13 @@ async function runFarmOperation(opType) {
 
     // 执行种植
     if (opType === 'all' || opType === 'plant') {
-        const allDeadLands = [...status.dead, ...harvestedLandIds]; // 收获后可能有地
-        const allEmptyLands = [...status.empty];
+        const allEmptyLands = [...new Set(status.empty)];
+        let allDeadLands = [...new Set(status.dead)];
+
+        if (opType === 'all' && harvestedLandIds.length > 0) {
+            const postHarvest = await resolveRemovableHarvestedLands(harvestedLandIds, harvestReply);
+            allDeadLands = [...new Set([...allDeadLands, ...postHarvest.removable])];
+        }
         // 注意：如果是单纯点"一键种植"，harvestedLandIds 为空，只种当前的空地/死地
         if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
             try {
@@ -983,4 +1158,5 @@ module.exports = {
     getLandsDetail,
     getAvailableSeeds,
     runFarmOperation, // 导出新函数
+    runFertilizerByConfig,
 };

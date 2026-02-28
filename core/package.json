@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -14,6 +14,7 @@
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
     "build:mac": "pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist",
+    "lint": "eslint . --fix",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

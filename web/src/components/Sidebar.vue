@@ -9,7 +9,7 @@ import RemarkModal from '@/components/RemarkModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 import { menuRoutes } from '@/router/menu'
-import { useAccountStore } from '@/stores/account'
+import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
 
@@ -89,6 +89,8 @@ onBeforeUnmount(() => {
   statusStore.disconnectRealtime()
 })
 
+const platform = computed(() => getPlatformLabel(currentAccount.value?.platform))
+
 useIntervalFn(checkConnection, 30000)
 useIntervalFn(() => {
   refreshStatusFallback()
@@ -132,12 +134,21 @@ const displayName = computed(() => {
   // 1. 优先显示实时状态中的昵称 (如果有且不是未登录)
   const liveName = status.value?.status?.name
   if (liveName && liveName !== '未登录') {
+    // 如果有备注，显示为“昵称（备注）”
+    if (acc.name) {
+      return `${liveName} (${acc.name})`
+    }
     return liveName
   }
 
   // 2. 其次显示账号存储的备注名称 (name)
-  if (acc.name)
+  if (acc.name) {
+    // 如果有同步的昵称，显示为“昵称（备注）”
+    if (acc.nick) {
+      return `${acc.nick} (${acc.name})`
+    }
     return acc.name
+  }
 
   // 3. 显示同步的昵称 (nick)
   if (acc.nick)
@@ -246,9 +257,18 @@ watch(
               <span class="w-full truncate text-left text-sm font-medium">
                 {{ displayName }}
               </span>
-              <span class="w-full truncate text-left text-xs text-gray-400">
-                {{ currentAccount?.uin || currentAccount?.id || '未选择' }}
-              </span>
+              <div class="mt-0.5 flex items-center gap-1.5">
+                <span
+                  v-if="platform"
+                  class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                  :class="getPlatformClass(currentAccount?.platform)"
+                >
+                  {{ platform }}
+                </span>
+                <span class="truncate text-xs text-gray-400">
+                  {{ currentAccount?.uin || currentAccount?.id || '未选择' }}
+                </span>
+              </div>
             </div>
           </div>
           <div
@@ -282,9 +302,18 @@ watch(
                 </div>
                 <div class="min-w-0 flex flex-1 flex-col items-start">
                   <span class="w-full truncate text-left text-sm font-medium">
-                    {{ acc.name || acc.nick || acc.uin }}
+                    {{ acc.nick && acc.name ? `${acc.nick} (${acc.name})` : acc.name || acc.nick || acc.uin }}
                   </span>
-                  <span class="text-xs text-gray-400">{{ acc.uin || acc.id }}</span>
+                  <div class="flex items-center gap-1.5">
+                    <span
+                      v-if="platform"
+                      class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
+                      :class="getPlatformClass(acc.platform)"
+                    >
+                      {{ getPlatformLabel(acc.platform) }}
+                    </span>
+                    <span class="text-xs text-gray-400">{{ acc.uin || acc.id }}</span>
+                  </div>
                 </div>
                 <div class="flex items-center gap-1">
                   <button

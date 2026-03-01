@@ -12,6 +12,7 @@ COPY core/package.json ./core/
 COPY web/package.json ./web/
 
 # Install all deps for build
+RUN npm config set registry https://registry.npmmirror.com/
 RUN pnpm install --frozen-lockfile
 
 # Copy source code
@@ -33,6 +34,7 @@ COPY core/package.json ./core/
 COPY web/package.json ./web/
 
 # Install only runtime deps for core
+RUN npm config set registry https://registry.npmmirror.com/
 RUN pnpm -C core install --prod --frozen-lockfile
 
 # ==========================================

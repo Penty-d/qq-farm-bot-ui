@@ -422,10 +422,14 @@ async function handleSaveOffline() {
               label="优先种植种子"
               :options="preferredSeedOptions"
             />
-            <div v-else class="flex flex-col gap-1">
-              <span class="text-xs text-gray-500 dark:text-gray-400">策略选种预览</span>
-              <div class="h-9 flex items-center border border-gray-200 rounded-md bg-gray-50 px-3 text-sm text-gray-600 dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-300">
-                {{ strategyPreviewLabel ?? '加载中...' }}
+            <!-- 预览区域：与 BaseSelect 同结构同样式，避免切换策略时布局跳动 -->
+            <div v-else class="flex flex-col gap-1.5">
+              <label class="text-sm text-gray-700 font-medium dark:text-gray-300">策略选种预览</label>
+              <div
+                class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400"
+              >
+                <span class="truncate">{{ strategyPreviewLabel ?? '加载中...' }}</span>
+                <div class="i-carbon-chevron-down shrink-0 text-lg text-gray-400" />
               </div>
             </div>
           </div>

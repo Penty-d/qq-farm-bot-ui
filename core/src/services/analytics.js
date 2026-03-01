@@ -45,7 +45,7 @@ function getPlantRankings(sortBy = 'exp') {
         // 放宽条件，只要有种子ID且有生长阶段数据
         return p.seed_id > 0 && p.grow_phases;
     });
-    console.warn(`[分析] 筛选出 ${normalPlants.length} 种普通作物`);
+    console.warn(`[分析] 筛选出 ${normalPlants.length} 种作物`);
 
 
 

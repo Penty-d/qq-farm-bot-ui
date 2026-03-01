@@ -18,7 +18,7 @@ app.use(router)
 const toast = useToastStore()
 
 app.config.errorHandler = (err: any, _instance, info) => {
-  console.error('Global Vue Error:', err, info)
+  console.error('全局 Vue 错误:', err, info)
   const message = err.message || String(err)
   if (message.includes('ResizeObserver loop'))
     return

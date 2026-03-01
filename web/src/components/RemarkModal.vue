@@ -28,13 +28,11 @@ async function save() {
   loading.value = true
   errorMessage.value = ''
   try {
-    // 使用 name 字段存储备注
+    // 使用 name 字段存储备注，只发送 id 和 name 两个字段
     const payload = {
-      ...props.account,
+      id: props.account.id,
       name: name.value,
     }
-    // 确保不发送 nick
-    delete payload.nick
 
     const res = await api.post('/api/accounts', payload)
     if (res.data.ok) {

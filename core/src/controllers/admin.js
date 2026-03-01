@@ -518,6 +518,21 @@ function startAdminServer(dataProvider) {
                 wasRunning = provider.isAccountRunning(payload.id);
             }
 
+            // 检查是否仅修改了备注信息
+            let onlyRemarkChanged = false;
+            if (isUpdate) {
+                const oldAccounts = provider.getAccounts();
+                const oldAccount = oldAccounts.accounts.find(a => a.id === payload.id);
+                if (oldAccount) {
+                    // 检查 payload 中是否只包含 id 和 name 字段
+                    const payloadKeys = Object.keys(payload);
+                    const onlyIdAndName = payloadKeys.length === 2 && payloadKeys.includes('id') && payloadKeys.includes('name');
+                    if (onlyIdAndName) {
+                        onlyRemarkChanged = true;
+                    }
+                }
+            }
+
             const data = addOrUpdateAccount(payload);
             if (provider.addAccountLog) {
                 const accountId = isUpdate ? String(payload.id) : String((data.accounts[data.accounts.length - 1] || {}).id || '');
@@ -533,8 +548,8 @@ function startAdminServer(dataProvider) {
             if (!isUpdate) {
                 const newAcc = data.accounts[data.accounts.length - 1];
                 if (newAcc) provider.startAccount(newAcc.id);
-            } else if (wasRunning) {
-                // 如果是更新，且之前在运行，则重启
+            } else if (wasRunning && !onlyRemarkChanged) {
+                // 如果是更新，且之前在运行，且不是仅修改备注，则重启
                 provider.restartAccount(payload.id);
             }
             res.json({ ok: true, data });

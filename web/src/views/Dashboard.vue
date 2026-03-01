@@ -100,20 +100,39 @@ const logs = [
 ]
 
 const displayName = computed(() => {
+  const account = accountStore.currentAccount
+
   // Try to use nickname from status (game server)
   const gameName = status.value?.status?.name
-  if (gameName)
+  if (gameName) {
+    // 如果有备注，显示为“昵称（备注）”
+    if (account?.name) {
+      return `${gameName} (${account.name})`
+    }
     return gameName
+  }
 
   // Check login status
   if (!status.value?.connection?.connected) {
-    const account = accountStore.currentAccount
-    return account?.name || account?.nick || '未登录'
+    if (account) {
+      // 如果有备注和昵称，显示为“昵称（备注）”
+      if (account.name && account.nick) {
+        return `${account.nick} (${account.name})`
+      }
+      return account.name || account.nick || '未登录'
+    }
+    return '未登录'
   }
 
   // Fallback to account name (usually ID) or '未命名'
-  const account = accountStore.currentAccount
-  return account?.name || account?.nick || '未命名'
+  if (account) {
+    // 如果有备注和昵称，显示为“昵称（备注）”
+    if (account.name && account.nick) {
+      return `${account.nick} (${account.name})`
+    }
+    return account.name || account.nick || '未命名'
+  }
+  return '未命名'
 })
 
 // Exp Rate & Time to Level
@@ -165,32 +184,35 @@ function formatBucketTime(item: any) {
 }
 
 // Next Check Countdown
-const nextFarmCheck = ref('--')
-const nextFriendCheck = ref('--')
+const nextFarmCheck = ref('--:--:--')
+const nextFriendCheck = ref('--:--:--')
 const localUptime = ref(0)
 let localNextFarmRemainSec = 0
 let localNextFriendRemainSec = 0
 
 function updateCountdowns() {
   // Update uptime
-  if (status.value?.connection?.connected) {
+  if (!status.value?.connection?.connected) {
+    nextFarmCheck.value = '账号未登录'
+    nextFriendCheck.value = '账号未登录'
+  }
+  else {
     localUptime.value++
-  }
+    if (localNextFarmRemainSec > 0) {
+      localNextFarmRemainSec--
+      nextFarmCheck.value = formatDuration(localNextFarmRemainSec)
+    }
+    else {
+      nextFarmCheck.value = '巡查中...'
+    }
 
-  if (localNextFarmRemainSec > 0) {
-    localNextFarmRemainSec--
-    nextFarmCheck.value = formatDuration(localNextFarmRemainSec)
-  }
-  else {
-    nextFarmCheck.value = '巡查中...'
-  }
-
-  if (localNextFriendRemainSec > 0) {
-    localNextFriendRemainSec--
-    nextFriendCheck.value = formatDuration(localNextFriendRemainSec)
-  }
-  else {
-    nextFriendCheck.value = '巡查中...'
+    if (localNextFriendRemainSec > 0) {
+      localNextFriendRemainSec--
+      nextFriendCheck.value = formatDuration(localNextFriendRemainSec)
+    }
+    else {
+      nextFriendCheck.value = '巡查中...'
+    }
   }
 }
 
@@ -297,7 +319,7 @@ async function refreshBag(force = false) {
   await bagStore.fetchBag(currentAccountId.value)
 }
 
-async function refresh() {
+async function refresh(forceReloadLogs = false) {
   if (currentAccountId.value) {
     const acc = currentAccount.value
     if (!acc)
@@ -309,7 +331,7 @@ async function refresh() {
       await statusStore.fetchAccountLogs()
     }
 
-    if (hasActiveLogFilter.value || !realtimeConnected.value) {
+    if (forceReloadLogs || hasActiveLogFilter.value || !realtimeConnected.value) {
       await statusStore.fetchLogs(currentAccountId.value, {
         module: filter.module || undefined,
         event: filter.event || undefined,
@@ -321,6 +343,14 @@ async function refresh() {
     // 仅在账号已运行且连接就绪后拉背包，避免启动阶段触发500
     await refreshBag()
   }
+}
+
+function onLogFilterChange() {
+  refresh(true)
+}
+
+function onLogSearchTrigger() {
+  refresh(true)
 }
 
 watch(currentAccountId, () => {
@@ -340,7 +370,7 @@ watch(() => JSON.stringify(status.value?.operations || {}), (next, prev) => {
 
 watch(hasActiveLogFilter, (enabled) => {
   statusStore.setRealtimeLogsEnabled(!enabled)
-  refresh()
+  refresh(enabled)
 })
 
 function onLogScroll(e: Event) {
@@ -533,21 +563,21 @@ useIntervalFn(updateCountdowns, 1000)
                 v-model="filter.module"
                 :options="modules"
                 class="w-32"
-                @change="refresh"
+                @change="onLogFilterChange"
               />
 
               <BaseSelect
                 v-model="filter.event"
                 :options="events"
                 class="w-32"
-                @change="refresh"
+                @change="onLogFilterChange"
               />
 
               <BaseSelect
                 v-model="filter.isWarn"
                 :options="logs"
                 class="w-32"
-                @change="refresh"
+                @change="onLogFilterChange"
               />
 
               <BaseInput
@@ -555,14 +585,14 @@ useIntervalFn(updateCountdowns, 1000)
                 placeholder="关键词..."
                 class="w-32"
                 clearable
-                @keyup.enter="refresh"
-                @clear="refresh"
+                @keyup.enter="onLogSearchTrigger"
+                @clear="onLogSearchTrigger"
               />
 
               <BaseButton
                 variant="primary"
                 size="sm"
-                @click="refresh"
+                @click="onLogSearchTrigger"
               >
                 <div class="i-carbon-search" />
               </BaseButton>
@@ -619,11 +649,22 @@ useIntervalFn(updateCountdowns, 1000)
             <div class="i-carbon-chart-column" />
             <span>今日统计</span>
           </h3>
-          <div class="grid grid-cols-2 gap-2 2xl:gap-3">
+          <div v-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
+            <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
+            <div class="flex flex-col">
+              <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
+                账号未登录
+              </div>
+              <div class="mt-1 text-sm text-gray-400">
+                请先运行账号或检查网络连接
+              </div>
+            </div>
+          </div>
+          <div v-else class="grid grid-cols-2 gap-2 2xl:gap-3">
             <div
               v-for="(val, key) in (status?.operations || {})"
               :key="key"
-              class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-700/30 2xl:px-4 2xl:py-3"
+              class="flex items-center justify-between rounded bg-gray-50 px-3 py-2 dark:bg-gray-700/30"
             >
               <div class="flex items-center gap-2">
                 <div class="text-base 2xl:text-lg" :class="[getOpIcon(key), getOpColor(key)]" />

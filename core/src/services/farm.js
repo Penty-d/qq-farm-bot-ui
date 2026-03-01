@@ -796,6 +796,100 @@ function analyzeLands(lands) {
     return result;
 }
 
+function buildLandMap(lands) {
+    const map = new Map();
+    const list = Array.isArray(lands) ? lands : [];
+    for (const land of list) {
+        const id = toNum(land && land.id);
+        if (id > 0) map.set(id, land);
+    }
+    return map;
+}
+
+function getLandLifecycleState(land) {
+    if (!land) return 'unknown';
+    const plant = land.plant;
+    if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) {
+        return 'empty';
+    }
+
+    const currentPhase = getCurrentPhase(plant.phases, false, '');
+    if (!currentPhase) return 'empty';
+
+    const phaseVal = toNum(currentPhase.phase);
+    if (phaseVal === PlantPhase.DEAD) return 'dead';
+    if (phaseVal === PlantPhase.UNKNOWN) return 'empty';
+    if (phaseVal >= PlantPhase.SEED && phaseVal <= PlantPhase.MATURE) return 'growing';
+    return 'unknown';
+}
+
+function classifyHarvestedLandsByMap(landIds, landsMap) {
+    const removable = [];
+    const growing = [];
+    const unknown = [];
+    for (const id of landIds) {
+        const land = landsMap.get(id);
+        if (!land) {
+            unknown.push(id);
+            continue;
+        }
+        const state = getLandLifecycleState(land);
+        if (state === 'dead' || state === 'empty') {
+            removable.push(id);
+            continue;
+        }
+        if (state === 'growing') {
+            growing.push(id);
+            continue;
+        }
+        unknown.push(id);
+    }
+    return { removable, growing, unknown };
+}
+
+async function resolveRemovableHarvestedLands(harvestedLandIds, harvestReply) {
+    const ids = Array.isArray(harvestedLandIds) ? harvestedLandIds.filter(Boolean) : [];
+    if (ids.length === 0) {
+        return { removable: [], growing: [], fallbackRemoved: 0 };
+    }
+
+    const replyMap = buildLandMap(harvestReply && harvestReply.land);
+    const firstPass = classifyHarvestedLandsByMap(ids, replyMap);
+    const removable = [...firstPass.removable];
+    const growing = [...firstPass.growing];
+    let unknown = [...firstPass.unknown];
+    let fallbackRemoved = 0;
+
+    if (unknown.length > 0) {
+        try {
+            const latestLandsReply = await getAllLands();
+            const latestMap = buildLandMap(latestLandsReply && latestLandsReply.lands);
+            const secondPass = classifyHarvestedLandsByMap(unknown, latestMap);
+            removable.push(...secondPass.removable);
+            growing.push(...secondPass.growing);
+            unknown = secondPass.unknown;
+        } catch (e) {
+            logWarn('农场', `收后状态补拉失败: ${e.message}`, {
+                module: 'farm',
+                event: 'post_harvest_state_fallback',
+                result: 'error',
+            });
+        }
+    }
+
+    if (unknown.length > 0) {
+        // 按兼容策略：不可判定时保持旧行为，继续铲除
+        removable.push(...unknown);
+        fallbackRemoved = unknown.length;
+    }
+
+    return {
+        removable: [...new Set(removable)],
+        growing: [...new Set(growing)],
+        fallbackRemoved,
+    };
+}
+
 async function checkFarm() {
     const state = getUserState();
     if (isCheckingFarm || !state.gid || !isAutomationOn('farm')) return false;
@@ -861,6 +955,7 @@ async function runFarmOperation(opType) {
 
     // 执行收获
     let harvestedLandIds = [];
+    let harvestReply = null;
     if (opType === 'all' || opType === 'harvest') {
         // 如果开启了等偷配置，过滤掉未被偷过的土地
         let landsToHarvest = status.harvestable;
@@ -880,8 +975,8 @@ async function runFarmOperation(opType) {
 
         if (landsToHarvest.length > 0) {
             try {
-                await harvest(landsToHarvest);
-                log('收获', `收获完成 ${landsToHarvest.length} 块土地`, {
+                harvestReply = await harvest(status.harvestable);
+                log('收获', `收获完成 ${status.harvestable.length} 块土地`, {
                     module: 'farm',
                     event: 'harvest_crop',
                     result: 'ok',
@@ -908,8 +1003,13 @@ async function runFarmOperation(opType) {
 
     // 执行种植
     if (opType === 'all' || opType === 'plant') {
-        const allDeadLands = [...status.dead, ...harvestedLandIds]; // 收获后可能有地
-        const allEmptyLands = [...status.empty];
+        const allEmptyLands = [...new Set(status.empty)];
+        let allDeadLands = [...new Set(status.dead)];
+
+        if (opType === 'all' && harvestedLandIds.length > 0) {
+            const postHarvest = await resolveRemovableHarvestedLands(harvestedLandIds, harvestReply);
+            allDeadLands = [...new Set([...allDeadLands, ...postHarvest.removable])];
+        }
         // 注意：如果是单纯点"一键种植"，harvestedLandIds 为空，只种当前的空地/死地
         if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
             try {

@@ -34,10 +34,10 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function setTheme(theme: 'light' | 'dark') {
+  async function setTheme(theme: 'dark' | 'light') {
     try {
       await api.post('/api/settings/theme', { theme })
-      isDark.value = theme === 'dark'
+      isDark.value = theme === 'light'
       localStorage.setItem(THEME_KEY, theme)
     }
     catch (e) {
@@ -46,7 +46,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function toggleDark() {
-    const newTheme = isDark.value ? 'light' : 'dark'
+    const newTheme = isDark.value ? 'dark' : 'light'
     setTheme(newTheme)
   }
 

@@ -62,6 +62,7 @@ const localSettings = ref({
     friend_help: false,
     friend_bad: false,
     friend_help_exp_limit: false,
+    friend_auto_blacklist: false,
     email: false,
     fertilizer_gift: false,
     fertilizer_buy: false,
@@ -113,6 +114,7 @@ function syncLocalSettings() {
         friend_help: false,
         friend_bad: false,
         friend_help_exp_limit: false,
+        friend_auto_blacklist: false,
         email: false,
         fertilizer_gift: false,
         fertilizer_buy: false,
@@ -137,6 +139,7 @@ function syncLocalSettings() {
         friend_help: false,
         friend_bad: false,
         friend_help_exp_limit: false,
+        friend_auto_blacklist: false,
         email: false,
         fertilizer_gift: false,
         fertilizer_buy: false,
@@ -515,6 +518,7 @@ async function handleSaveOffline() {
             <BaseSwitch v-model="localSettings.automation.friend_help" label="自动帮忙" />
             <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" />
             <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" />
+            <BaseSwitch v-model="localSettings.automation.friend_auto_blacklist" label="账号异常自动拉黑" />
           </div>
 
           <!-- Fertilizer -->

@@ -54,6 +54,7 @@ const AUTOMATION_SCHEMA = {
         friend_help: { type: 'boolean', default: true },
         friend_bad: { type: 'boolean', default: false },
         friend_help_exp_limit: { type: 'boolean', default: true },
+        friend_auto_blacklist: { type: 'boolean', default: true },
         task: { type: 'boolean', default: true },
         email: { type: 'boolean', default: true },
         fertilizer_gift: { type: 'boolean', default: false },

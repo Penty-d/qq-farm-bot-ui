@@ -35,6 +35,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         friend_steal: true, // 偷菜
         friend_help: true,  // 帮忙
         friend_bad: false,  // 捣乱(放虫草)
+        friend_auto_blacklist: true, // 自动将访问失败的好友加入黑名单
         task: true,
         email: true,
         fertilizer_gift: false,

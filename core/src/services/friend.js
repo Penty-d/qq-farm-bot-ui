@@ -4,7 +4,7 @@
 
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantName, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
-const { isAutomationOn, getFriendQuietHours, getFriendBlacklist } = require('../models/store');
+const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, setFriendBlacklist } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -62,6 +62,42 @@ function inFriendQuietHours(now = new Date()) {
     if (start === end) return true; // 起止相同视为全天静默
     if (start < end) return cur >= start && cur < end;
     return cur >= start || cur < end; // 跨天时段
+}
+
+function isAccountBannedError(error) {
+    const msg = String(error && (error.message) || '');
+    return msg.includes('code=1002003') ||
+        msg.includes('已被封禁') ||
+        msg.includes('账号异常') ||
+        msg.includes('不存在') ||
+        msg.includes('已注销');
+}
+
+function addToBlacklistIfBanned(friendGid, friendName, error) {
+    if (!isAccountBannedError(error)) return false;
+    if (!isAutomationOn('friend_auto_blacklist')) return false;
+    
+    const gid = toNum(friendGid);
+    if (!gid) return false;
+    
+    try {
+        const currentBlacklist = getFriendBlacklist();
+        if (!currentBlacklist.includes(gid)) {
+            const newBlacklist = [...currentBlacklist, gid];
+            setFriendBlacklist(null, newBlacklist);
+            log('好友', `检测到账号异常，已自动加入黑名单: ${friendName}(${gid})`, {
+                module: 'friend',
+                event: 'auto_blacklist',
+                result: 'ok',
+                friendGid: gid,
+                friendName,
+            });
+            return true;
+        }
+    } catch (e) {
+        logWarn('好友', `自动加入黑名单失败: ${e.message}`);
+    }
+    return false;
 }
 
 // ============ 好友 API ============
@@ -689,6 +725,7 @@ async function visitFriend(friend, totalActions, myGid) {
         logWarn('好友', `进入 ${name} 农场失败: ${e.message}`, {
             module: 'friend', event: 'enter_farm', result: 'error', friendName: name, friendGid: gid
         });
+        addToBlacklistIfBanned(gid, name, e);
         return;
     }
 

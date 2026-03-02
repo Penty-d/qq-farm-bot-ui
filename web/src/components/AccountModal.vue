@@ -170,17 +170,18 @@ async function submitManual() {
   let payload = {}
   if (props.editData) {
     // 编辑模式：检查是否只修改了备注
-    const onlyNameChanged = form.name !== props.editData.name && 
-                           form.code === (props.editData.code || '') && 
-                           form.platform === (props.editData.platform || 'qq')
-    
+    const onlyNameChanged = form.name !== props.editData.name
+      && form.code === (props.editData.code || '')
+      && form.platform === (props.editData.platform || 'qq')
+
     if (onlyNameChanged) {
       // 仅修改了备注，只发送 id 和 name
       payload = {
         id: props.editData.id,
         name: form.name,
       }
-    } else {
+    }
+    else {
       // 修改了其他字段，发送完整 payload
       payload = {
         id: props.editData.id,
@@ -190,7 +191,8 @@ async function submitManual() {
         loginType: 'manual',
       }
     }
-  } else {
+  }
+  else {
     // 新增模式，发送完整 payload
     payload = {
       name: form.name,

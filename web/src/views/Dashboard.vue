@@ -202,27 +202,33 @@ function updateCountdowns() {
   }
   else {
     localUptime.value++
-    
+
     // 优先显示巡查状态
     if (localFarmInspecting) {
       nextFarmCheck.value = '巡查中...'
-    } else if (localFarmWaiting) {
+    }
+    else if (localFarmWaiting) {
       nextFarmCheck.value = '等待巡查...'
-    } else if (localNextFarmRemainSec > 0) {
+    }
+    else if (localNextFarmRemainSec > 0) {
       localNextFarmRemainSec--
       nextFarmCheck.value = formatDuration(localNextFarmRemainSec)
-    } else {
+    }
+    else {
       nextFarmCheck.value = '等待巡查...'
     }
 
     if (localFriendInspecting) {
       nextFriendCheck.value = '巡查中...'
-    } else if (localFriendWaiting) {
+    }
+    else if (localFriendWaiting) {
       nextFriendCheck.value = '等待巡查...'
-    } else if (localNextFriendRemainSec > 0) {
+    }
+    else if (localNextFriendRemainSec > 0) {
       localNextFriendRemainSec--
       nextFriendCheck.value = formatDuration(localNextFriendRemainSec)
-    } else {
+    }
+    else {
       nextFriendCheck.value = '等待巡查...'
     }
   }

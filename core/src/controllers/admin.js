@@ -1,4 +1,4 @@
-const crypto = require('node:crypto');
+﻿const crypto = require('node:crypto');
 /**
  * 管理面板 HTTP 服务
  * 改写为接收 DataProvider 模式
@@ -631,6 +631,34 @@ function startAdminServer(dataProvider) {
         };
         const list = provider.getLogs(id, options);
         res.json({ ok: true, data: list });
+    });
+
+    // API: 清空当前账号运行日志
+    app.delete('/api/logs', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = provider.clearLogs(id);
+
+            if (io && provider && typeof provider.getLogs === 'function') {
+                const accountLogs = provider.getLogs(id, { limit: 100 });
+                io.to(`account:${id}`).emit('logs:snapshot', {
+                    accountId: id,
+                    logs: Array.isArray(accountLogs) ? accountLogs : [],
+                });
+
+                const allLogs = provider.getLogs('', { limit: 100 });
+                io.to('account:all').emit('logs:snapshot', {
+                    accountId: 'all',
+                    logs: Array.isArray(allLogs) ? allLogs : [],
+                });
+            }
+
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
     });
 
     // ============ QR Code Login APIs (无需账号选择) ============

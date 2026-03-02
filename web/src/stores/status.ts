@@ -1,4 +1,4 @@
-import type { Socket } from 'socket.io-client'
+﻿import type { Socket } from 'socket.io-client'
 import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { io } from 'socket.io-client'
@@ -220,6 +220,22 @@ export const useStatusStore = defineStore('status', () => {
     }
   }
 
+  async function clearLogs(accountId: string) {
+    const id = String(accountId || '').trim()
+    if (!id || id === 'all')
+      throw new Error('仅支持清空当前账号日志')
+
+    const { data } = await api.delete('/api/logs', {
+      headers: { 'x-account-id': id },
+    })
+    if (!data?.ok) {
+      throw new Error(data?.error || '清空日志失败')
+    }
+    logs.value = []
+    error.value = ''
+    return data.data || { accountId: id, cleared: 0 }
+  }
+
   async function fetchDailyGifts(accountId: string) {
     if (!accountId)
       return
@@ -263,6 +279,7 @@ export const useStatusStore = defineStore('status', () => {
     realtimeLogsEnabled,
     fetchStatus,
     fetchLogs,
+    clearLogs,
     fetchAccountLogs,
     fetchDailyGifts,
     setRealtimeLogsEnabled,

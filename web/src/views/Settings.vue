@@ -239,8 +239,9 @@ const CHANNEL_DOCS: Record<string, string> = {
 
 const reloginUrlModeOptions = [
   { label: '不需要', value: 'none' },
-  { label: 'QQ直链', value: 'qq_link' },
-  { label: '二维码链接', value: 'qr_link' },
+  { label: '链接', value: 'qq_link' },
+  { label: '二维码', value: 'qr_code' },
+  { label: '二维码+链接', value: 'all' },
 ]
 
 const currentChannelDocUrl = computed(() => {

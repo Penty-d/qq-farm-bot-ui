@@ -105,7 +105,7 @@ function normalizeOfflineReminder(input) {
     const rawReloginUrlMode = (src.reloginUrlMode !== undefined && src.reloginUrlMode !== null)
         ? String(src.reloginUrlMode).trim().toLowerCase()
         : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
-    const reloginUrlMode = new Set(['none', 'qq_link', 'qr_link']).has(rawReloginUrlMode)
+    const reloginUrlMode = new Set(['none', 'qq_link', 'qr_code','all']).has(rawReloginUrlMode)
         ? rawReloginUrlMode
         : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
     const token = (src.token !== undefined && src.token !== null)

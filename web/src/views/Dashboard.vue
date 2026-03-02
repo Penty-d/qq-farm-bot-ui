@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -8,10 +8,12 @@ import BaseSelect from '@/components/ui/BaseSelect.vue'
 import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
+import { useToastStore } from '@/stores/toast'
 
 const statusStore = useStatusStore()
 const accountStore = useAccountStore()
 const bagStore = useBagStore()
+const toastStore = useToastStore()
 const {
   status,
   logs: statusLogs,
@@ -23,6 +25,7 @@ const { dashboardItems } = storeToRefs(bagStore)
 const logContainer = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
 const lastBagFetchAt = ref(0)
+const clearLogsLoading = ref(false)
 
 const allLogs = computed(() => {
   const sLogs = statusLogs.value || []
@@ -369,6 +372,26 @@ function onLogSearchTrigger() {
   refresh(true)
 }
 
+async function onClearLogs() {
+  if (!currentAccountId.value || clearLogsLoading.value)
+    return
+  if (!window.confirm('确定清空当前账号的运行日志吗？此操作不可恢复。'))
+    return
+
+  try {
+    clearLogsLoading.value = true
+    const ret = await statusStore.clearLogs(currentAccountId.value)
+    toastStore.success(`已清空 ${Number(ret?.cleared) || 0} 条运行日志`)
+    await refresh(true)
+  }
+  catch (e: any) {
+    toastStore.error(e?.message || '清空运行日志失败')
+  }
+  finally {
+    clearLogsLoading.value = false
+  }
+}
+
 watch(currentAccountId, () => {
   refresh()
 })
@@ -611,6 +634,16 @@ useIntervalFn(updateCountdowns, 1000)
                 @click="onLogSearchTrigger"
               >
                 <div class="i-carbon-search" />
+              </BaseButton>
+
+              <BaseButton
+                variant="danger"
+                size="sm"
+                :loading="clearLogsLoading"
+                @click="onClearLogs"
+              >
+                <div class="i-carbon-trash-can mr-1" />
+                清空日志
               </BaseButton>
             </div>
           </div>

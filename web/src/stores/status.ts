@@ -1,4 +1,4 @@
-﻿import type { Socket } from 'socket.io-client'
+import type { Socket } from 'socket.io-client'
 import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { io } from 'socket.io-client'

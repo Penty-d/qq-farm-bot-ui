@@ -1,7 +1,8 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -26,6 +27,8 @@ const logContainer = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
 const lastBagFetchAt = ref(0)
 const clearLogsLoading = ref(false)
+
+const clearLogsModalVisible = ref(false)
 
 const allLogs = computed(() => {
   const sLogs = statusLogs.value || []
@@ -381,9 +384,11 @@ function onLogSearchTrigger() {
 async function onClearLogs() {
   if (!currentAccountId.value || clearLogsLoading.value)
     return
-  if (!window.confirm('确定清空当前账号的运行日志吗？此操作不可恢复。'))
-    return
+  clearLogsModalVisible.value = true
+}
 
+async function confirmClearLogs() {
+  clearLogsModalVisible.value = false
   try {
     clearLogsLoading.value = true
     const ret = await statusStore.clearLogs(currentAccountId.value)
@@ -396,6 +401,10 @@ async function onClearLogs() {
   finally {
     clearLogsLoading.value = false
   }
+}
+
+function cancelClearLogs() {
+  clearLogsModalVisible.value = false
 }
 
 watch(currentAccountId, () => {
@@ -735,5 +744,18 @@ useIntervalFn(updateCountdowns, 1000)
         </div>
       </div>
     </div>
+
+    <!-- Clear Logs Confirm Modal -->
+    <ConfirmModal
+      :show="clearLogsModalVisible"
+      title="清空运行日志"
+      message="确定清空当前账号的运行日志吗？此操作不可恢复。"
+      confirm-text="清空"
+      cancel-text="取消"
+      type="danger"
+      :loading="clearLogsLoading"
+      @confirm="confirmClearLogs"
+      @cancel="cancelClearLogs"
+    />
   </div>
 </template>

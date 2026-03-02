@@ -1,4 +1,4 @@
-const { findAccountByRef, normalizeAccountRef, resolveAccountId: resolveAccountIdByList } = require('../services/account-resolver');
+﻿const { findAccountByRef, normalizeAccountRef, resolveAccountId: resolveAccountIdByList } = require('../services/account-resolver');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
 
 function createDataProvider(options) {
@@ -63,6 +63,26 @@ function createDataProvider(options) {
             if (!accountId) return [];
             const accId = String(accountId || '');
             return filterLogs(globalLogs.filter(l => String(l.accountId || '') === accId), opts).slice(-max);
+        },
+        clearLogs: (accountRef) => {
+            const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) {
+                throw new Error('Missing x-account-id');
+            }
+            const accId = String(accountId || '');
+            let cleared = 0;
+            for (let i = globalLogs.length - 1; i >= 0; i -= 1) {
+                if (String((globalLogs[i] && globalLogs[i].accountId) || '') !== accId) continue;
+                globalLogs.splice(i, 1);
+                cleared += 1;
+            }
+
+            const worker = workers[accId];
+            if (worker && Array.isArray(worker.logs)) {
+                worker.logs.length = 0;
+            }
+
+            return { accountId: accId, cleared };
         },
 
         getAccountLogs: (limit) => accountLogs.slice(-limit).reverse(),

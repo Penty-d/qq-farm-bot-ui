@@ -1,4 +1,5 @@
 const { sleep } = require('../utils/utils');
+const QRCode = require('qrcode');
 
 function createReloginReminderService(options) {
     const {
@@ -146,18 +147,30 @@ function createReloginReminderService(options) {
             let content = String(cfg.msg || '').trim();
             if (!channel || !token || !title || !content) return;
             if (channel === 'webhook' && !endpoint) return;
-            if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_link') {
+            if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_code' || reloginUrlMode === 'all') {
                 try {
                     const qr = await miniProgramLoginSession.requestLoginCode();
                     const loginCode = String((qr && qr.code) || '').trim();
                     const qqUrl = String((qr && (qr.url || qr.loginUrl)) || '').trim();
-                    const qrCodeUrl = String((qr && qr.qrcode) || '').trim();
+                    // const qrCodeUrl = String((qr && qr.qrcode) || '').trim();
                     if (qqUrl) {
                         if (reloginUrlMode === 'qq_link') {
-                            content = `${content}\n\n重登录链接: ${qqUrl}`;
-                        } else {
-                            const qrcodeText = qrCodeUrl || qqUrl;
-                            content = `${content}\n\n重登录二维码链接: ${qrcodeText}`;
+                            content = `${content}\n\n登录链接: ${qqUrl}`;
+                        } else if(reloginUrlMode === 'qr_code') {
+                            // const qrcodeText = qrCodeUrl || qqUrl;
+                             const image = await QRCode.toDataURL(qqUrl, {
+                                    width: 300,
+                                    margin: 1,
+                                    errorCorrectionLevel: 'M',
+                                });
+                            content = `${content}\n\n登录二维码:\n\n<img src="${image}" alt="登录二维码" width="300" height="300" />`;
+                        }else if(reloginUrlMode === 'all'){
+                               const image = await QRCode.toDataURL(qqUrl, {
+                                    width: 300,
+                                    margin: 1,
+                                    errorCorrectionLevel: 'M',
+                                });
+                            content = ` ${content}\n\n登录链接: ${qqUrl}\n登录二维码:\n <img src="${image}" alt="登录二维码" width="300" height="300" />`;
                         }
                     }
                     if (loginCode) {

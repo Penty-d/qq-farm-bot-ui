@@ -75,6 +75,8 @@ const localSettings = ref({
   },
 })
 
+const friendDisabled = computed(() => !localSettings.value.automation.friend)
+
 const localOffline = ref({
   channel: 'webhook',
   reloginUrlMode: 'none',
@@ -514,12 +516,12 @@ async function handleSaveOffline() {
           </div>
 
           <!-- Sub-controls -->
-          <div v-if="localSettings.automation.friend" class="flex flex-wrap gap-4 rounded bg-blue-50 p-2 text-sm dark:bg-blue-900/20">
-            <BaseSwitch v-model="localSettings.automation.friend_steal" label="自动偷菜" />
-            <BaseSwitch v-model="localSettings.automation.friend_help" label="自动帮忙" />
-            <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" />
-            <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" />
-            <BaseSwitch v-model="localSettings.automation.friend_auto_blacklist" label="账号异常自动拉黑" />
+          <div class="flex flex-wrap gap-4 rounded bg-blue-50 p-2 text-sm dark:bg-blue-900/20" :class="{ 'opacity-50 pointer-events-none': friendDisabled }">
+            <BaseSwitch v-model="localSettings.automation.friend_steal" label="自动偷菜" :disabled="friendDisabled" />
+            <BaseSwitch v-model="localSettings.automation.friend_help" label="自动帮忙" :disabled="friendDisabled" />
+            <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" :disabled="friendDisabled" />
+            <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" :disabled="friendDisabled" />
+            <BaseSwitch v-model="localSettings.automation.friend_auto_blacklist" label="账号异常自动拉黑" :disabled="friendDisabled" />
           </div>
 
           <!-- Fertilizer -->

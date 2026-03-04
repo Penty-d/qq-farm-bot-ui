@@ -114,9 +114,9 @@ function addFriendToBlacklist(friendGid, friendName, reason = '') {
 // ============ 好友 API ============
 
 async function getAllFriends() {
-    const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body);
-    return types.GetAllFriendsReply.decode(replyBody);
+    const body = types.SyncAllRequest.encode(types.SyncAllRequest.create({ open_ids: [] })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'SyncAll', body);
+    return types.SyncAllReply.decode(replyBody);
 }
 
 // ============ 好友申请 API (微信同玩) ============

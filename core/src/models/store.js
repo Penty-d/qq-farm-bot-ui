@@ -25,6 +25,10 @@ const DEFAULT_OFFLINE_REMINDER = {
     msg: '账号下线',
     offlineDeleteSec: 120,
 };
+
+const DEFAULT_QR_LOGIN = {
+    apiDomain: 'q.qq.com',
+};
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
@@ -85,6 +89,7 @@ const globalConfig = {
         theme: 'dark',
     },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
+    qrLogin: { ...DEFAULT_QR_LOGIN },
     adminPasswordHash: '',
 };
 
@@ -133,6 +138,27 @@ function normalizeOfflineReminder(input) {
     };
 }
 
+
+function normalizeApiDomain(input, fallback = DEFAULT_QR_LOGIN.apiDomain) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    const normalized = /^https?:\/\//i.test(raw) ? raw : ('https://' + raw);
+    try {
+        const parsed = new URL(normalized);
+        const host = String(parsed.host || '').trim();
+        return host || fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+
+function normalizeQrLoginConfig(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    return {
+        apiDomain: normalizeApiDomain(src.apiDomain, DEFAULT_QR_LOGIN.apiDomain),
+    };
+}
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const srcAutomation = (base && base.automation && typeof base.automation === 'object')
         ? base.automation
@@ -287,6 +313,7 @@ function loadGlobalConfig() {
             const theme = String(globalConfig.ui.theme || '').toLowerCase();
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
             globalConfig.offlineReminder = normalizeOfflineReminder(data.offlineReminder);
+            globalConfig.qrLogin = normalizeQrLoginConfig(data.qrLogin);
             if (typeof data.adminPasswordHash === 'string') {
                 globalConfig.adminPasswordHash = data.adminPasswordHash;
             }
@@ -359,6 +386,7 @@ function getConfigSnapshot(accountId) {
         friendQuietHours: { ...cfg.friendQuietHours },
         friendBlacklist: [...(cfg.friendBlacklist || [])],
         ui: { ...globalConfig.ui },
+        qrLogin: normalizeQrLoginConfig(globalConfig.qrLogin),
     };
 }
 
@@ -518,6 +546,17 @@ function setOfflineReminder(cfg) {
     return getOfflineReminder();
 }
 
+
+function getQrLoginConfig() {
+    return normalizeQrLoginConfig(globalConfig.qrLogin);
+}
+
+function setQrLoginConfig(cfg) {
+    const current = normalizeQrLoginConfig(globalConfig.qrLogin);
+    globalConfig.qrLogin = normalizeQrLoginConfig({ ...current, ...(cfg || {}) });
+    saveGlobalConfig();
+    return getQrLoginConfig();
+}
 // ============ 账号管理 ============
 function loadAccounts() {
     ensureDataDir();
@@ -603,9 +642,12 @@ module.exports = {
     setUITheme,
     getOfflineReminder,
     setOfflineReminder,
+    getQrLoginConfig,
+    setQrLoginConfig,
     getAccounts,
     addOrUpdateAccount,
     deleteAccount,
     getAdminPasswordHash,
     setAdminPasswordHash,
 };
+

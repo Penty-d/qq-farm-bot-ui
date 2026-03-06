@@ -23,6 +23,7 @@ const saving = ref(false)
 const passwordSaving = ref(false)
 const offlineSaving = ref(false)
 const offlineTesting = ref(false)
+const qrSaving = ref(false)
 
 const modalVisible = ref(false)
 const modalConfig = ref({
@@ -90,6 +91,10 @@ const localOffline = ref({
   title: '',
   msg: '',
   offlineDeleteSec: 120,
+})
+
+const localQrLogin = ref({
+  apiDomain: 'q.qq.com',
 })
 
 const passwordForm = ref({
@@ -172,6 +177,9 @@ function syncLocalSettings() {
     // Sync offline settings (global)
     if (settings.value.offlineReminder) {
       localOffline.value = JSON.parse(JSON.stringify(settings.value.offlineReminder))
+    }
+    if (settings.value.qrLogin) {
+      localQrLogin.value = JSON.parse(JSON.stringify(settings.value.qrLogin))
     }
   }
 }
@@ -383,6 +391,21 @@ async function handleChangePassword() {
   }
 }
 
+async function handleSaveQrLogin() {
+  qrSaving.value = true
+  try {
+    const res = await settingStore.saveQrLoginConfig(localQrLogin.value)
+    if (res.ok) {
+      showAlert('二维码接口设置已保存')
+    }
+    else {
+      showAlert(`保存失败: ${res.error || '未知错误'}`, 'danger')
+    }
+  }
+  finally {
+    qrSaving.value = false
+  }
+}
 async function handleSaveOffline() {
   offlineSaving.value = true
   try {
@@ -651,6 +674,36 @@ async function handleTestOffline() {
           </div>
         </div>
 
+        <!-- QR Login Header -->
+        <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+          <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
+            <div class="i-carbon-qr-code" />
+            二维码登录接口
+          </h3>
+        </div>
+
+        <!-- QR Login Content -->
+        <div class="p-4 space-y-3">
+          <BaseInput
+            v-model="localQrLogin.apiDomain"
+            label="二维码接口域名"
+            type="text"
+            placeholder="q.qq.com"
+          />
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            仅影响后端调用二维码相关接口的域名，前端仍使用 /api/qr/create 与 /api/qr/check。
+          </p>
+          <div class="flex justify-end">
+            <BaseButton
+              variant="primary"
+              size="sm"
+              :loading="qrSaving"
+              @click="handleSaveQrLogin"
+            >
+              保存二维码接口设置
+            </BaseButton>
+          </div>
+        </div>
         <!-- Offline Header -->
         <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
@@ -764,3 +817,4 @@ async function handleTestOffline() {
 <style scoped lang="postcss">
 /* Custom styles if needed */
 </style>
+

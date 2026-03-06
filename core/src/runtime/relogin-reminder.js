@@ -21,6 +21,10 @@ function createReloginReminderService(options) {
         return sec * 1000;
     }
 
+    function getQrLoginOptions() {
+        const cfg = store.getQrLoginConfig ? store.getQrLoginConfig() : null;
+        return { apiDomain: String((cfg && cfg.apiDomain) || 'q.qq.com').trim() || 'q.qq.com' };
+    }
     function applyReloginCode({ accountId = '', accountName = '', authCode = '', uin = '' }) {
         const code = String(authCode || '').trim();
         if (!code) return;
@@ -93,7 +97,7 @@ function createReloginReminderService(options) {
             const maxRounds = 120; // ~2分钟
             for (let i = 0; i < maxRounds; i += 1) {
                 try {
-                    const status = await miniProgramLoginSession.queryStatus(code);
+                    const status = await miniProgramLoginSession.queryStatus(code, getQrLoginOptions());
                     if (!status || status.status === 'Wait') {
                         await sleep(1000);
                         continue;
@@ -111,7 +115,7 @@ function createReloginReminderService(options) {
                             stop();
                             return;
                         }
-                        const authCode = await miniProgramLoginSession.getAuthCode(ticket, '1112386029');
+                        const authCode = await miniProgramLoginSession.getAuthCode(ticket, '1112386029', getQrLoginOptions());
                         if (!authCode) {
                             log('错误', '重登录监听失败: 未获取到新 code');
                             stop();
@@ -149,7 +153,7 @@ function createReloginReminderService(options) {
             if (channel === 'webhook' && !endpoint) return;
             if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_code' || reloginUrlMode === 'all') {
                 try {
-                    const qr = await miniProgramLoginSession.requestLoginCode();
+                    const qr = await miniProgramLoginSession.requestLoginCode(getQrLoginOptions());
                     const loginCode = String((qr && qr.code) || '').trim();
                     const qqUrl = String((qr && (qr.url || qr.loginUrl)) || '').trim();
                     // const qrCodeUrl = String((qr && qr.qrcode) || '').trim();
@@ -215,3 +219,4 @@ function createReloginReminderService(options) {
 module.exports = {
     createReloginReminderService,
 };
+

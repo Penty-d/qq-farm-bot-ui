@@ -490,6 +490,16 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 保存二维码登录接口配置
+    app.post('/api/settings/qr-login', async (req, res) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const data = store.setQrLoginConfig ? store.setQrLoginConfig(body) : { apiDomain: 'q.qq.com' };
+            res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
     // API: 测试下线提醒推送（不落盘）
     app.post('/api/settings/offline-reminder/test', async (req, res) => {
         try {
@@ -543,7 +553,10 @@ function startAdminServer(dataProvider) {
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
                 : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 120 };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder } });
+            const qrLogin = store.getQrLoginConfig
+                ? store.getQrLoginConfig()
+                : { apiDomain: 'q.qq.com' };
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder, qrLogin } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -718,7 +731,8 @@ function startAdminServer(dataProvider) {
     // 这些接口不需要 authRequired 也能调用（用于登录流程）
     app.post('/api/qr/create', async (req, res) => {
         try {
-            const result = await MiniProgramLoginSession.requestLoginCode();
+            const qrLogin = store.getQrLoginConfig ? store.getQrLoginConfig() : { apiDomain: 'q.qq.com' };
+            const result = await MiniProgramLoginSession.requestLoginCode({ apiDomain: qrLogin.apiDomain });
             res.json({ ok: true, data: result });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -732,7 +746,8 @@ function startAdminServer(dataProvider) {
         }
 
         try {
-            const result = await MiniProgramLoginSession.queryStatus(code);
+            const qrLogin = store.getQrLoginConfig ? store.getQrLoginConfig() : { apiDomain: 'q.qq.com' };
+            const result = await MiniProgramLoginSession.queryStatus(code, { apiDomain: qrLogin.apiDomain });
 
             if (result.status === 'OK') {
                 const ticket = result.ticket;
@@ -740,7 +755,7 @@ function startAdminServer(dataProvider) {
                 const nickname = result.nickname || ''; // 获取昵称
                 const appid = '1112386029'; // Farm appid
 
-                const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid);
+                const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid, { apiDomain: qrLogin.apiDomain });
 
                 let avatar = '';
                 if (uin) {
@@ -859,3 +874,4 @@ module.exports = {
     emitRealtimeLog,
     emitRealtimeAccountLog,
 };
+

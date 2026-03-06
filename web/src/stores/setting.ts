@@ -49,6 +49,10 @@ export interface UIConfig {
   theme?: string
 }
 
+export interface QrLoginConfig {
+  apiDomain: string
+}
+
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
@@ -57,6 +61,7 @@ export interface SettingsState {
   automation: AutomationConfig
   ui: UIConfig
   offlineReminder: OfflineConfig
+  qrLogin: QrLoginConfig
 }
 
 export const useSettingStore = defineStore('setting', () => {
@@ -75,6 +80,9 @@ export const useSettingStore = defineStore('setting', () => {
       title: '账号下线提醒',
       msg: '账号下线',
       offlineDeleteSec: 120,
+    },
+    qrLogin: {
+      apiDomain: 'q.qq.com',
     },
   })
   const loading = ref(false)
@@ -103,6 +111,9 @@ export const useSettingStore = defineStore('setting', () => {
           title: '账号下线提醒',
           msg: '账号下线',
           offlineDeleteSec: 120,
+        }
+        settings.value.qrLogin = d.qrLogin || {
+          apiDomain: 'q.qq.com',
         }
       }
     }
@@ -159,6 +170,20 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
+  async function saveQrLoginConfig(config: QrLoginConfig) {
+    loading.value = true
+    try {
+      const { data } = await api.post('/api/settings/qr-login', config)
+      if (data && data.ok) {
+        settings.value.qrLogin = data.data || config
+        return { ok: true }
+      }
+      return { ok: false, error: '保存失败' }
+    }
+    finally {
+      loading.value = false
+    }
+  }
   async function changeAdminPassword(oldPassword: string, newPassword: string) {
     loading.value = true
     try {
@@ -170,5 +195,6 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, changeAdminPassword }
+  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, saveQrLoginConfig, changeAdminPassword }
 })
+

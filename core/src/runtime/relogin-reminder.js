@@ -21,13 +21,55 @@ function createReloginReminderService(options) {
         return sec * 1000;
     }
 
+    function resolveReloginTarget(list, { accountId = '', accountName = '', uin = '' } = {}) {
+        const normalizedId = String(accountId || '').trim();
+        const normalizedName = String(accountName || '').trim();
+        const normalizedUin = String(uin || '').trim();
+
+        if (normalizedId) {
+            const foundById = list.find(a => String(a && a.id || '').trim() === normalizedId);
+            if (foundById) return foundById;
+        }
+
+        if (normalizedUin) {
+            const foundByUin = list.find((a) => {
+                const qq = String((a && (a.qq || a.uin)) || '').trim();
+                const accountUin = String((a && (a.uin || a.qq)) || '').trim();
+                return qq === normalizedUin || accountUin === normalizedUin;
+            });
+            if (foundByUin) return foundByUin;
+        }
+
+        if (normalizedName) {
+            const matchedByName = list.filter((a) => {
+                const name = String((a && a.name) || '').trim();
+                const nick = String((a && a.nick) || '').trim();
+                return name === normalizedName || nick === normalizedName;
+            });
+            if (matchedByName.length === 1) return matchedByName[0];
+        }
+
+        if (!normalizedId && !normalizedUin && !normalizedName && list.length === 1) {
+            return list[0];
+        }
+
+        return null;
+    }
+
     function applyReloginCode({ accountId = '', accountName = '', authCode = '', uin = '' }) {
         const code = String(authCode || '').trim();
         if (!code) return;
 
+        const codeMask = code.length > 8 ? `${code.slice(0, 4)}***${code.slice(-4)}` : '***';
+        const displayName = accountName || accountId || '未知账号';
+        if (!uin) {
+            log('系统', `[Code接收] 用 code 直接登录 (${codeMask})，正在更新/创建账号: ${displayName}`, { accountId, accountName });
+            addAccountLog('update', `[Code接收] 收到 code，已直接用于登录: ${displayName}`, accountId, displayName, { reason: 'code_receive', codeLen: code.length, codeMask });
+        }
+
         const data = getAccounts();
         const list = Array.isArray(data.accounts) ? data.accounts : [];
-        const found = list.find(a => String(a.id) === String(accountId));
+        const found = resolveReloginTarget(list, { accountId, accountName, uin });
         const avatar = uin ? `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640` : '';
         const controls = (typeof resolveWorkerControls === 'function') ? (resolveWorkerControls() || {}) : {};
         const startWorker = typeof controls.startWorker === 'function' ? controls.startWorker : null;
@@ -52,8 +94,8 @@ function createReloginReminderService(options) {
                     avatar: avatar || found.avatar || '',
                 });
             }
-            addAccountLog('update', `重登录成功，已更新账号: ${found.name}`, found.id, found.name, { reason: 'relogin' });
-            log('系统', `重登录成功，账号已更新并重启: ${found.name}`);
+            addAccountLog('update', `[Code接收] 重登录成功，新 code 已应用，已更新账号: ${found.name}`, found.id, found.name, { reason: 'relogin', hasNewCode: true });
+            log('系统', `[Code接收] 重登录成功，新 authCode 已刷新，账号已更新并重启: ${found.name}`);
             return;
         }
 
@@ -68,7 +110,7 @@ function createReloginReminderService(options) {
         const newAcc = (created.accounts || [])[created.accounts.length - 1];
         if (newAcc) {
             if (startWorker) startWorker(newAcc);
-            addAccountLog('add', `重登录成功，已新增账号: ${newAcc.name}`, newAcc.id, newAcc.name, { reason: 'relogin' });
+            addAccountLog('add', `[Code接收] 重登录成功，新 code 已应用，已新增账号: ${newAcc.name}`, newAcc.id, newAcc.name, { reason: 'relogin', hasNewCode: true });
             log('系统', `重登录成功，已新增账号并启动: ${newAcc.name}`, { accountId: String(newAcc.id), accountName: newAcc.name });
         }
     }
@@ -80,7 +122,11 @@ function createReloginReminderService(options) {
         const key = `${accountId || 'unknown'}:${code}`;
         if (reloginWatchers.has(key)) return;
         reloginWatchers.set(key, { startedAt: Date.now() });
-        log('系统', `已启动重登录监听: ${accountName || accountId || '未知账号'}`, { accountId: String(accountId || ''), accountName: accountName || '' });
+
+        const displayName = accountName || accountId || '未知账号';
+        const codeMask = code.length > 8 ? `${code.slice(0, 4)}***${code.slice(-4)}` : '***';
+        log('系统', `[Code接收] 已解析并收到登录 code (${codeMask})，启动重登录监听: ${displayName}`, { accountId: String(accountId || ''), accountName: accountName || '' });
+        addAccountLog('update', `[Code接收] 收到登录 code，正在监听扫码: ${displayName}`, accountId, displayName, { reason: 'code_receive', codeLen: code.length, codeMask });
 
         let stopped = false;
         const stop = () => {
@@ -117,6 +163,9 @@ function createReloginReminderService(options) {
                             stop();
                             return;
                         }
+                        const authCodeMask = authCode.length > 8 ? `${authCode.slice(0, 4)}***${authCode.slice(-4)}` : '***';
+                        log('系统', `[Code接收] 已获取新 authCode (${authCodeMask})，uin=${uin || '未知'}，即将刷新账号`, { accountId, accountName });
+                        addAccountLog('update', `[Code接收] 已获取新 code (authCode)，uin=${uin || '未知'}，正在更新登录状态`, accountId, displayName, { reason: 'code_receive', hasAuthCode: !!authCode });
                         applyReloginCode({ accountId, accountName, authCode, uin });
                         stop();
                         return;

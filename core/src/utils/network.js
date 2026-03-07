@@ -28,6 +28,7 @@ const networkScheduler = createScheduler('network');
 const userState = {
     gid: 0,
     name: '',
+    avatarUrl: '',
     level: 0,
     gold: 0,
     exp: 0,
@@ -335,6 +336,7 @@ function sendLogin(onLoginSuccess) {
                 clearWsErrorState();
                 userState.gid = toNum(reply.basic.gid);
                 userState.name = reply.basic.name || '未知';
+                userState.avatarUrl = String(reply.basic.avatar_url || '').trim();
                 userState.level = toNum(reply.basic.level);
                 userState.gold = toNum(reply.basic.gold);
                 userState.exp = toNum(reply.basic.exp);
@@ -342,6 +344,7 @@ function sendLogin(onLoginSuccess) {
                 // 更新状态栏
                 updateStatusFromLogin({
                     name: userState.name,
+                    avatarUrl: userState.avatarUrl,
                     level: userState.level,
                     gold: userState.gold,
                     exp: userState.exp,

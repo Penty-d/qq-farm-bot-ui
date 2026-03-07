@@ -32,15 +32,33 @@ const clearLogsConfirmLoading = ref(false)
 
 const allLogs = computed(() => {
   const sLogs = statusLogs.value || []
-  const aLogs = (statusAccountLogs.value || []).map((l: any) => ({
-    ts: new Date(l.time).getTime(),
-    time: l.time,
-    tag: l.action === 'Error' ? '错误' : '系统',
-    msg: l.reason ? `${l.msg} (${l.reason})` : l.msg,
-    isAccountLog: true,
-  }))
+  const aLogs = (statusAccountLogs.value || []).map((l: any) => {
+    const ts = new Date(l.time || 0).getTime() || Date.now()
+    return {
+      ts,
+      time: l.time,
+      tag: l.action === 'Error' ? '错误' : '系统',
+      msg: l.reason ? `${l.msg} (${l.reason})` : l.msg,
+      isAccountLog: true,
+    }
+  })
 
-  return [...sLogs, ...aLogs].sort((a: any, b: any) => a.ts - b.ts).filter((l: any) => !l.isAccountLog)
+  return [...sLogs, ...aLogs].sort((a: any, b: any) => a.ts - b.ts)
+})
+
+// 最新收到的 Code（用于在日志上方展示）
+const latestCodeReceive = computed(() => {
+  const list = statusAccountLogs.value || []
+  const withCode = list.filter((l: any) => l.reason === 'code_receive')
+  if (!withCode.length) return null
+  const latest = withCode[withCode.length - 1]
+  const ts = new Date(latest.time).getTime()
+  return {
+    time: latest.time,
+    ts,
+    msg: latest.msg,
+    codeMask: latest.codeMask || (latest.codeLen ? `长度 ${latest.codeLen}` : ''),
+  }
 })
 
 const filter = reactive({
@@ -661,6 +679,25 @@ useIntervalFn(updateCountdowns, 1000)
                 <div class="i-carbon-trash-can mr-1" />
                 清空日志
               </BaseButton>
+            </div>
+          </div>
+
+          <!-- 最新收到的 Code（接受到则在此显示） -->
+          <div
+            v-if="latestCodeReceive"
+            class="mb-3 rounded border border-green-200 bg-green-50 px-3 py-2 text-sm dark:border-green-800 dark:bg-green-900/20"
+          >
+            <div class="font-medium text-green-800 dark:text-green-300">
+              <span class="i-carbon-checkmark-filled mr-1" />
+              新增 Code 已接收
+            </div>
+            <div class="mt-1 text-green-700 dark:text-green-400">
+              <span v-if="latestCodeReceive.codeMask" class="font-mono">Code（脱敏）：{{ latestCodeReceive.codeMask }}</span>
+              <span v-else>{{ latestCodeReceive.codeMask || '已收到' }}</span>
+              <span class="ml-2 text-gray-500 dark:text-gray-400">{{ latestCodeReceive.time }}</span>
+            </div>
+            <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+              {{ latestCodeReceive.msg }}
             </div>
           </div>
 

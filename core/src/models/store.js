@@ -25,6 +25,12 @@ const DEFAULT_OFFLINE_REMINDER = {
     msg: '账号下线',
     offlineDeleteSec: 120,
 };
+const DEFAULT_FERTILIZER_BY_LAND_LEVEL = {
+    default: 'none',
+    red: 'none',
+    black: 'none',
+    gold: 'none',
+};
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
@@ -52,6 +58,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         sell: true,
         fertilizer: 'none',
     },
+    fertilizerByLandLevel: { ...DEFAULT_FERTILIZER_BY_LAND_LEVEL },
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
     intervals: {
@@ -70,6 +77,23 @@ const DEFAULT_ACCOUNT_CONFIG = {
     friendBlacklist: [],
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
+
+function normalizeFertilizerMode(mode, fallback = 'none') {
+    const allowed = ['both', 'normal', 'organic', 'none'];
+    const text = String(mode || '').trim().toLowerCase();
+    return allowed.includes(text) ? text : fallback;
+}
+
+function cloneFertilizerByLandLevel(input, fallback = DEFAULT_FERTILIZER_BY_LAND_LEVEL) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_FERTILIZER_BY_LAND_LEVEL;
+    return {
+        default: normalizeFertilizerMode(src.default, normalizeFertilizerMode(base.default, 'none')),
+        red: normalizeFertilizerMode(src.red, normalizeFertilizerMode(base.red, 'none')),
+        black: normalizeFertilizerMode(src.black, normalizeFertilizerMode(base.black, 'none')),
+        gold: normalizeFertilizerMode(src.gold, normalizeFertilizerMode(base.gold, 'none')),
+    };
+}
 
 let accountFallbackConfig = {
     ...DEFAULT_ACCOUNT_CONFIG,
@@ -146,6 +170,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     return {
         ...base,
         automation,
+        fertilizerByLandLevel: cloneFertilizerByLandLevel(base.fertilizerByLandLevel, DEFAULT_FERTILIZER_BY_LAND_LEVEL),
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
@@ -171,12 +196,23 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
         for (const [k, v] of Object.entries(src.automation)) {
             if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue;
             if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'none'];
-                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
+                cfg.automation[k] = normalizeFertilizerMode(v, cfg.automation[k]);
             } else {
                 cfg.automation[k] = !!v;
             }
         }
+    }
+
+    if (src.fertilizerByLandLevel && typeof src.fertilizerByLandLevel === 'object') {
+        cfg.fertilizerByLandLevel = cloneFertilizerByLandLevel(src.fertilizerByLandLevel, cfg.fertilizerByLandLevel);
+    } else if (src.automation && typeof src.automation === 'object' && src.automation.fertilizer !== undefined) {
+        const legacyMode = normalizeFertilizerMode(src.automation.fertilizer, cfg.automation.fertilizer);
+        cfg.fertilizerByLandLevel = cloneFertilizerByLandLevel({
+            default: legacyMode,
+            red: legacyMode,
+            black: legacyMode,
+            gold: legacyMode,
+        }, cfg.fertilizerByLandLevel);
     }
 
     if (src.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(src.plantingStrategy)) {
@@ -353,6 +389,7 @@ function getConfigSnapshot(accountId) {
     const cfg = getAccountConfigSnapshot(accountId);
     return {
         automation: { ...cfg.automation },
+        fertilizerByLandLevel: cloneFertilizerByLandLevel(cfg.fertilizerByLandLevel, DEFAULT_FERTILIZER_BY_LAND_LEVEL),
         plantingStrategy: cfg.plantingStrategy,
         preferredSeedId: cfg.preferredSeedId,
         intervals: { ...cfg.intervals },
@@ -374,12 +411,15 @@ function applyConfigSnapshot(snapshot, options = {}) {
         for (const [k, v] of Object.entries(cfg.automation)) {
             if (next.automation[k] === undefined) continue;
             if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'none'];
-                next.automation[k] = allowed.includes(v) ? v : next.automation[k];
+                next.automation[k] = normalizeFertilizerMode(v, next.automation[k]);
             } else {
                 next.automation[k] = !!v;
             }
         }
+    }
+
+    if (cfg.fertilizerByLandLevel && typeof cfg.fertilizerByLandLevel === 'object') {
+        next.fertilizerByLandLevel = cloneFertilizerByLandLevel(cfg.fertilizerByLandLevel, next.fertilizerByLandLevel);
     }
 
     if (cfg.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(cfg.plantingStrategy)) {
@@ -483,6 +523,10 @@ function normalizeTimeString(v, fallback) {
 
 function getFriendQuietHours(accountId) {
     return { ...getAccountConfigSnapshot(accountId).friendQuietHours };
+}
+
+function getFertilizerByLandLevel(accountId) {
+    return cloneFertilizerByLandLevel(getAccountConfigSnapshot(accountId).fertilizerByLandLevel, DEFAULT_FERTILIZER_BY_LAND_LEVEL);
 }
 
 function getFriendBlacklist(accountId) {
@@ -597,6 +641,7 @@ module.exports = {
     getPlantingStrategy,
     getIntervals,
     getFriendQuietHours,
+    getFertilizerByLandLevel,
     getFriendBlacklist,
     setFriendBlacklist,
     getUI,

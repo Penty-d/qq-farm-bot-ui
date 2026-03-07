@@ -26,6 +26,54 @@ function createWorkerManager(options) {
     const managerScheduler = createScheduler('worker_manager');
     const useThreadRuntime = runtimeMode === 'thread' && !processRef.pkg && typeof WorkerThread === 'function';
 
+    function isGenericAccountName(name, accountId = '') {
+        const text = String(name || '').trim();
+        if (!text) return true;
+        if (String(accountId || '').trim() && text === String(accountId || '').trim()) return true;
+        return /^账号\d+$/.test(text);
+    }
+
+    function syncAccountProfileFromStatus(accountId, worker, payload) {
+        const status = (payload && payload.status && typeof payload.status === 'object') ? payload.status : {};
+        const newNick = String(status.name || '').trim();
+        const newAvatar = String(status.avatarUrl || status.avatar_url || '').trim();
+        const updatePayload = { id: accountId };
+        const oldNick = String(worker.nick || '').trim();
+        const oldName = String(worker.name || '').trim();
+        let hasUpdate = false;
+        let syncedName = false;
+
+        if (newNick && newNick !== '未知' && newNick !== '未登录') {
+            if (oldNick !== newNick) {
+                worker.nick = newNick;
+                updatePayload.nick = newNick;
+                hasUpdate = true;
+            }
+            if (isGenericAccountName(oldName, accountId) && oldName !== newNick) {
+                worker.name = newNick;
+                updatePayload.name = newNick;
+                hasUpdate = true;
+                syncedName = true;
+            }
+        }
+
+        if (newAvatar && String(worker.avatar || '').trim() !== newAvatar) {
+            worker.avatar = newAvatar;
+            updatePayload.avatar = newAvatar;
+            hasUpdate = true;
+        }
+
+        if (!hasUpdate) return;
+
+        addOrUpdateAccount(updatePayload);
+
+        if (syncedName) {
+            log('系统', `已同步账号名称: ${oldName || '未命名'} -> ${worker.name}`, { accountId, accountName: worker.name });
+        } else if (newNick && oldNick !== newNick) {
+            log('系统', `已同步账号昵称: ${oldNick || 'None'} -> ${newNick}`, { accountId, accountName: worker.name });
+        }
+    }
+
     function createThreadWorker(account) {
         const worker = new WorkerThread(workerScriptPath, {
             workerData: {
@@ -82,6 +130,8 @@ function createWorkerManager(options) {
             requests: new Map(), // pending API requests
             reqId: 1,
             name: account.name,
+            nick: account.nick || '',
+            avatar: account.avatar || '',
             stopping: false,
             disconnectedSince: 0,
             autoDeleteTriggered: false,
@@ -196,31 +246,12 @@ function createWorkerManager(options) {
         if (!worker) return;
 
         if (msg.type === 'status_sync') {
+            syncAccountProfileFromStatus(accountId, worker, msg.data);
+
             // 合并状态
             worker.status = normalizeStatusForPanel(msg.data, accountId, worker.name);
             if (typeof onStatusSync === 'function') {
                 onStatusSync(accountId, worker.status, worker.name);
-            }
-
-            // 尝试更新昵称到 store
-            if (msg.data && msg.data.status && msg.data.status.name) {
-                const newNick = String(msg.data.status.name).trim();
-                // 忽略无效昵称
-                if (newNick && newNick !== '未知' && newNick !== '未登录') {
-                    // 避免频繁写入，只在内存中无昵称或不一致时更新
-                    if (worker.nick !== newNick) {
-                        const oldNick = worker.nick;
-                        worker.nick = newNick;
-                        addOrUpdateAccount({
-                            id: accountId,
-                            nick: newNick,
-                        });
-                        // 仅在首次同步或名称变更时记录日志
-                        if (oldNick !== newNick) {
-                            log('系统', `已同步账号昵称: ${oldNick || 'None'} -> ${newNick}`, { accountId, accountName: worker.name });
-                        }
-                    }
-                }
             }
 
             const connected = !!(msg.data && msg.data.connection && msg.data.connection.connected);

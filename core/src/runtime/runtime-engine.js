@@ -55,6 +55,8 @@ function createRuntimeEngine(options = {}) {
   const {
     getOfflineAutoDeleteMs,
     triggerOfflineReminder,
+    startReloginWatcher,
+    applyReloginCode,
   } = reloginReminder
 
   const { startWorker, stopWorker, restartWorker, callWorkerApi } = createWorkerManager({
@@ -116,6 +118,8 @@ function createRuntimeEngine(options = {}) {
     startWorker,
     stopWorker,
     restartWorker,
+    startReloginWatcher,
+    applyReloginCode,
   })
 
   runtimeEvents.on('log', (entry) => {

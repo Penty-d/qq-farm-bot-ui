@@ -311,7 +311,8 @@ function stopUnifiedScheduler() {
 }
 
 function applyRuntimeConfig(snapshot, syncNow = false) {
-    const prevAuto = getAutomation();
+    const prevConfig = getConfigSnapshot();
+    const prevAuto = prevConfig.automation || {};
     
     // 配置校验
     const validatedSnapshot = snapshot;
@@ -349,10 +350,13 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
         resetUnifiedSchedule();
         scheduleUnifiedNextTick();
 
+        const nextConfig = getConfigSnapshot();
+        const nextAuto = nextConfig.automation || {};
+
         // 保存设置后若“自动处理日常”开启，则立即执行一次
         const hasAutomationPayload = !!(snapshot && snapshot.automation && typeof snapshot.automation === 'object');
+        const hasFertilizerByLandPayload = !!(snapshot && snapshot.fertilizerByLandLevel && typeof snapshot.fertilizerByLandLevel === 'object');
         if (hasAutomationPayload) {
-            const nextAuto = getAutomation();
             const wasEnabled = isDailyRoutineEnabled(prevAuto);
             const nowEnabled = isDailyRoutineEnabled(nextAuto);
             if (!wasEnabled && nowEnabled) {
@@ -361,25 +365,27 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
                     runDailyRoutines(true).catch(() => null);
                 });
             }
+        }
 
-            const prevFertilizerMode = String(prevAuto && prevAuto.fertilizer ? prevAuto.fertilizer : '').toLowerCase();
-            const nextFertilizerMode = String(nextAuto && nextAuto.fertilizer ? nextAuto.fertilizer : '').toLowerCase();
-            const fertilizerChanged = prevFertilizerMode !== nextFertilizerMode;
-            if (fertilizerChanged && (nextFertilizerMode === 'both' || nextFertilizerMode === 'organic')) {
-                // 保存设置时 /api/automation 可能连续触发多次 config_sync，这里做防抖为一次立即施肥
-                workerScheduler.setTimeoutTask('fertilizer_immediate_after_save', 600, async () => {
-                    if (!loginReady) return;
-                    try {
-                        await runFertilizerByConfig([]);
-                    } catch (e) {
-                        log('施肥', `保存配置后立即施肥失败: ${e.message}`, {
-                            module: 'farm',
-                            event: 'fertilize',
-                            result: 'error',
-                        });
-                    }
-                });
-            }
+        const prevFertilizerByLand = JSON.stringify((prevConfig && prevConfig.fertilizerByLandLevel) || {});
+        const nextFertilizerByLand = JSON.stringify((nextConfig && nextConfig.fertilizerByLandLevel) || {});
+        const shouldRunFertilizerNow = Object.values((nextConfig && nextConfig.fertilizerByLandLevel) || {})
+            .some(mode => String(mode || '').toLowerCase() !== 'none');
+        if ((hasAutomationPayload || hasFertilizerByLandPayload)
+            && prevFertilizerByLand !== nextFertilizerByLand
+            && shouldRunFertilizerNow) {
+            workerScheduler.setTimeoutTask('fertilizer_immediate_after_save', 600, async () => {
+                if (!loginReady) return;
+                try {
+                    await runFertilizerByConfig([]);
+                } catch (e) {
+                    log('施肥', `保存配置后立即施肥失败: ${e.message}`, {
+                        module: 'farm',
+                        event: 'fertilize',
+                        result: 'error',
+                    });
+                }
+            });
         }
     }
 

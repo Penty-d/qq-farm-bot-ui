@@ -13,6 +13,7 @@ function setRecordGoldExpHook(hook) { recordGoldExpHook = hook; }
 const statusData = {
     platform: 'qq',
     name: '',
+    avatarUrl: '',
     level: 0,
     gold: 0,
     exp: 0,
@@ -160,6 +161,7 @@ function setStatusPlatform(platform) {
 function updateStatusFromLogin(basic) {
     updateStatus({
         name: basic.name || statusData.name,
+        avatarUrl: basic.avatarUrl || basic.avatar_url || statusData.avatarUrl,
         level: (basic.level ?? statusData.level),
         gold: (basic.gold ?? statusData.gold),
         exp: (basic.exp ?? statusData.exp),

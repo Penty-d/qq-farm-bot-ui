@@ -5,7 +5,7 @@
 const protobuf = require('protobufjs');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
-const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy } = require('../models/store');
+const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getFertilizerByLandLevel } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, getServerTimeSec, toTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -163,21 +163,74 @@ function getOrganicFertilizerTargetsFromLands(lands) {
     return targets;
 }
 
-async function runFertilizerByConfig(plantedLands = []) {
-    const fertilizerConfig = getAutomation().fertilizer || 'both';
-    const planted = (Array.isArray(plantedLands) ? plantedLands : []).filter(Boolean);
+function getLandFertilizerKey(land) {
+    const level = toNum(land && land.level);
+    if (level >= 4) return 'gold';
+    if (level === 3) return 'black';
+    if (level === 2) return 'red';
+    return 'default';
+}
 
-    if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both') {
+function getFertilizerModeForLand(land, fertilizerByLandLevel) {
+    const key = getLandFertilizerKey(land);
+    const mode = String((fertilizerByLandLevel && fertilizerByLandLevel[key]) || 'none').trim().toLowerCase();
+    return ['none', 'normal', 'organic', 'both'].includes(mode) ? mode : 'none';
+}
+
+function getPlantedLandsForFertilizer(lands, plantedLandIds = []) {
+    const list = Array.isArray(lands) ? lands : [];
+    const targetIds = new Set((Array.isArray(plantedLandIds) ? plantedLandIds : []).map(id => toNum(id)).filter(Boolean));
+    return list.filter((land) => {
+        if (!land || !land.unlocked) return false;
+        const landId = toNum(land.id);
+        if (!landId) return false;
+        if (targetIds.size > 0 && !targetIds.has(landId)) return false;
+        const plant = land.plant;
+        if (!plant || !plant.phases || plant.phases.length === 0) return false;
+        const currentPhase = getCurrentPhase(plant.phases);
+        if (!currentPhase) return false;
+        if (currentPhase.phase === PlantPhase.DEAD) return false;
+        return true;
+    });
+}
+
+async function runFertilizerByConfig(plantedLands = []) {
+    const fertilizerByLandLevel = getFertilizerByLandLevel();
+    const hasAnyFertilizer = Object.values(fertilizerByLandLevel || {}).some(mode => String(mode || '').toLowerCase() !== 'none');
+    if (!hasAnyFertilizer) {
         return { normal: 0, organic: 0 };
+    }
+
+    let latestLands = [];
+    try {
+        const latest = await getAllLands();
+        latestLands = getPlantedLandsForFertilizer(latest && latest.lands, plantedLands);
+    } catch (e) {
+        logWarn('施肥', `获取全农场地块失败，跳过本轮施肥: ${e.message}`);
+        return { normal: 0, organic: 0 };
+    }
+
+    if (latestLands.length === 0) {
+        return { normal: 0, organic: 0 };
+    }
+
+    const normalTargets = [];
+    const organicCandidateLands = [];
+    for (const land of latestLands) {
+        const landId = toNum(land.id);
+        if (!landId) continue;
+        const mode = getFertilizerModeForLand(land, fertilizerByLandLevel);
+        if (mode === 'normal' || mode === 'both') normalTargets.push(landId);
+        if (mode === 'organic' || mode === 'both') organicCandidateLands.push(land);
     }
 
     let fertilizedNormal = 0;
     let fertilizedOrganic = 0;
 
-    if ((fertilizerConfig === 'normal' || fertilizerConfig === 'both') && planted.length > 0) {
-        fertilizedNormal = await fertilize(planted, NORMAL_FERTILIZER_ID);
+    if (normalTargets.length > 0) {
+        fertilizedNormal = await fertilize(normalTargets, NORMAL_FERTILIZER_ID);
         if (fertilizedNormal > 0) {
-            log('施肥', `已为 ${fertilizedNormal}/${planted.length} 块地施无机化肥`, {
+            log('施肥', `已为 ${fertilizedNormal}/${normalTargets.length} 块地施无机化肥`, {
                 module: 'farm',
                 event: 'fertilize',
                 result: 'ok',
@@ -188,15 +241,8 @@ async function runFertilizerByConfig(plantedLands = []) {
         }
     }
 
-    if (fertilizerConfig === 'organic' || fertilizerConfig === 'both') {
-        let organicTargets = planted;
-        try {
-            const latest = await getAllLands();
-            organicTargets = getOrganicFertilizerTargetsFromLands(latest && latest.lands);
-        } catch (e) {
-            logWarn('施肥', `获取全农场地块失败，回退已种地块: ${e.message}`);
-        }
-
+    const organicTargets = getOrganicFertilizerTargetsFromLands(organicCandidateLands);
+    if (organicTargets.length > 0) {
         fertilizedOrganic = await fertilizeOrganicLoop(organicTargets);
         if (fertilizedOrganic > 0) {
             log('施肥', `有机化肥循环施肥完成，共施 ${fertilizedOrganic} 次`, {

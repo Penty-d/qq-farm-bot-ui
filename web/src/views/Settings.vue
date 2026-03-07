@@ -7,7 +7,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import { useAccountStore } from '@/stores/account'
+import { getAccountDisplayName, useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
 
@@ -42,9 +42,16 @@ function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
   modalVisible.value = true
 }
 
+const defaultLandFertilizer = {
+  default: 'none',
+  red: 'none',
+  black: 'none',
+  gold: 'none',
+}
+
 const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
-  return acc ? (acc.name || acc.nick || acc.id) : null
+  return acc ? getAccountDisplayName(acc) : null
 })
 
 const localSettings = ref({
@@ -52,6 +59,7 @@ const localSettings = ref({
   preferredSeedId: 0,
   intervals: { farmMin: 2, farmMax: 2, friendMin: 10, friendMax: 10 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
+  fertilizerByLandLevel: { ...defaultLandFertilizer },
   automation: {
     farm: false,
     farm_manage: false,
@@ -102,8 +110,19 @@ function syncLocalSettings() {
       preferredSeedId: settings.value.preferredSeedId,
       intervals: settings.value.intervals,
       friendQuietHours: settings.value.friendQuietHours,
+      fertilizerByLandLevel: settings.value.fertilizerByLandLevel,
       automation: settings.value.automation,
     }))
+
+    if (!localSettings.value.fertilizerByLandLevel) {
+      localSettings.value.fertilizerByLandLevel = { ...defaultLandFertilizer }
+    }
+    else {
+      localSettings.value.fertilizerByLandLevel = {
+        ...defaultLandFertilizer,
+        ...localSettings.value.fertilizerByLandLevel,
+      }
+    }
 
     // Default automation values if missing
     if (!localSettings.value.automation) {
@@ -195,6 +214,13 @@ const fertilizerOptions = [
   { label: '仅普通化肥', value: 'normal' },
   { label: '仅有机化肥', value: 'organic' },
   { label: '不施肥', value: 'none' },
+]
+
+const landFertilizerOptions: Array<{ key: keyof typeof defaultLandFertilizer, label: string }> = [
+  { key: 'default', label: '默认土地' },
+  { key: 'red', label: '红土地' },
+  { key: 'black', label: '黑土地' },
+  { key: 'gold', label: '金土地' },
 ]
 
 const plantingStrategyOptions = [
@@ -563,13 +589,19 @@ async function handleTestOffline() {
           </div>
 
           <!-- Fertilizer -->
-          <div>
-            <BaseSelect
-              v-model="localSettings.automation.fertilizer"
-              label="施肥策略"
-              class="w-full md:w-1/2"
-              :options="fertilizerOptions"
-            />
+          <div class="space-y-3">
+            <div class="text-sm text-gray-700 font-medium dark:text-gray-300">
+              施肥策略
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <BaseSelect
+                v-for="item in landFertilizerOptions"
+                :key="item.key"
+                v-model="localSettings.fertilizerByLandLevel[item.key]"
+                :label="`${item.label}施肥`"
+                :options="fertilizerOptions"
+              />
+            </div>
           </div>
         </div>
 

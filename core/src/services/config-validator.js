@@ -111,6 +111,17 @@ const QUIET_HOURS_SCHEMA = {
     additionalProperties: false,
 };
 
+const FERTILIZER_BY_LAND_SCHEMA = {
+    type: 'object',
+    properties: {
+        default: { type: 'string', oneOf: ['none', 'normal', 'organic', 'both'], default: 'none' },
+        red: { type: 'string', oneOf: ['none', 'normal', 'organic', 'both'], default: 'none' },
+        black: { type: 'string', oneOf: ['none', 'normal', 'organic', 'both'], default: 'none' },
+        gold: { type: 'string', oneOf: ['none', 'normal', 'organic', 'both'], default: 'none' },
+    },
+    additionalProperties: false,
+};
+
 // 账号配置Schema
 const ACCOUNT_CONFIG_SCHEMA = {
     type: 'object',
@@ -123,6 +134,7 @@ const ACCOUNT_CONFIG_SCHEMA = {
             default: 'preferred',
         },
         preferredSeedId: { type: 'number', min: 0, default: 0 },
+        fertilizerByLandLevel: FERTILIZER_BY_LAND_SCHEMA,
         friendQuietHours: QUIET_HOURS_SCHEMA,
         friendBlacklist: { type: 'array', items: { type: 'number' }, default: [] },
     },

@@ -49,11 +49,19 @@ export interface UIConfig {
   theme?: string
 }
 
+export interface FertilizerByLandLevelConfig {
+  default?: string
+  red?: string
+  black?: string
+  gold?: string
+}
+
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
+  fertilizerByLandLevel: FertilizerByLandLevelConfig
   automation: AutomationConfig
   ui: UIConfig
   offlineReminder: OfflineConfig
@@ -65,6 +73,7 @@ export const useSettingStore = defineStore('setting', () => {
     preferredSeedId: 0,
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
+    fertilizerByLandLevel: { default: 'none', red: 'none', black: 'none', gold: 'none' },
     automation: {},
     ui: {},
     offlineReminder: {
@@ -93,6 +102,7 @@ export const useSettingStore = defineStore('setting', () => {
         settings.value.preferredSeedId = d.preferredSeed || 0
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
+        settings.value.fertilizerByLandLevel = d.fertilizerByLandLevel || { default: 'none', red: 'none', black: 'none', gold: 'none' }
         settings.value.automation = d.automation || {}
         settings.value.ui = d.ui || {}
         settings.value.offlineReminder = d.offlineReminder || {
@@ -122,6 +132,7 @@ export const useSettingStore = defineStore('setting', () => {
         preferredSeedId: newSettings.preferredSeedId,
         intervals: newSettings.intervals,
         friendQuietHours: newSettings.friendQuietHours,
+        fertilizerByLandLevel: newSettings.fertilizerByLandLevel,
       }
 
       await api.post('/api/settings/save', settingsPayload, {

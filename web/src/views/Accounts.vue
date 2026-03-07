@@ -6,7 +6,7 @@ import { useRouter } from 'vue-router'
 import AccountModal from '@/components/AccountModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
+import { getAccountAvatar, getAccountDisplayName, getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 
 const router = useRouter()
 const accountStore = useAccountStore()
@@ -126,12 +126,12 @@ function selectAccount(account: any) {
         <div class="mb-4 flex items-start justify-between">
           <div class="flex items-center gap-3">
             <div class="h-12 w-12 flex items-center justify-center overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-              <img v-if="acc.uin" :src="`https://q1.qlogo.cn/g?b=qq&nk=${acc.uin}&s=100`" class="h-full w-full object-cover">
+              <img v-if="getAccountAvatar(acc)" :src="getAccountAvatar(acc)" class="h-full w-full object-cover">
               <div v-else class="i-carbon-user text-2xl text-gray-400" />
             </div>
             <div>
               <h3 class="text-lg font-bold">
-                {{ acc.name || acc.nick || acc.id }}
+                {{ getAccountDisplayName(acc) }}
               </h3>
               <div class="mt-0.5 flex items-center gap-1.5">
                 <span

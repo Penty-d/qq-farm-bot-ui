@@ -37,6 +37,7 @@ function createRuntimeState(options) {
     function buildConfigSnapshotForAccount(accountId) {
         return {
             automation: store.getAutomation(accountId),
+            fertilizerByLandLevel: store.getFertilizerByLandLevel(accountId),
             plantingStrategy: store.getPlantingStrategy(accountId),
             preferredSeedId: store.getPreferredSeed(accountId),
             intervals: store.getIntervals(accountId),

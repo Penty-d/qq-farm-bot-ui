@@ -9,7 +9,7 @@ import RemarkModal from '@/components/RemarkModal.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 
 import { menuRoutes } from '@/router/menu'
-import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
+import { getAccountAvatar, getAccountDisplayName, getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
 
@@ -127,35 +127,7 @@ const uptime = computed(() => {
 })
 
 const displayName = computed(() => {
-  const acc = currentAccount.value
-  if (!acc)
-    return '选择账号'
-
-  // 1. 优先显示实时状态中的昵称 (如果有且不是未登录)
-  const liveName = status.value?.status?.name
-  if (liveName && liveName !== '未登录') {
-    // 如果有备注，显示为“昵称（备注）”
-    if (acc.name) {
-      return `${liveName} (${acc.name})`
-    }
-    return liveName
-  }
-
-  // 2. 其次显示账号存储的备注名称 (name)
-  if (acc.name) {
-    // 如果有同步的昵称，显示为“昵称（备注）”
-    if (acc.nick) {
-      return `${acc.nick} (${acc.name})`
-    }
-    return acc.name
-  }
-
-  // 3. 显示同步的昵称 (nick)
-  if (acc.nick)
-    return acc.nick
-
-  // 4. 最后显示UIN
-  return acc.uin
+  return getAccountDisplayName(currentAccount.value || undefined, status.value?.status?.name)
 })
 
 const connectionStatus = computed(() => {
@@ -246,8 +218,8 @@ watch(
           <div class="flex items-center gap-3 overflow-hidden">
             <div class="h-8 w-8 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-2 ring-white dark:bg-gray-600 dark:ring-gray-700">
               <img
-                v-if="currentAccount?.uin"
-                :src="`https://q1.qlogo.cn/g?b=qq&nk=${currentAccount.uin}&s=100`"
+                v-if="getAccountAvatar(currentAccount || undefined)"
+                :src="getAccountAvatar(currentAccount || undefined)"
                 class="h-full w-full object-cover"
                 @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
               >
@@ -293,8 +265,8 @@ watch(
               >
                 <div class="h-6 w-6 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
                   <img
-                    v-if="acc.uin"
-                    :src="`https://q1.qlogo.cn/g?b=qq&nk=${acc.uin}&s=100`"
+                    v-if="getAccountAvatar(acc)"
+                    :src="getAccountAvatar(acc)"
                     class="h-full w-full object-cover"
                     @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
                   >
@@ -302,7 +274,7 @@ watch(
                 </div>
                 <div class="min-w-0 flex flex-1 flex-col items-start">
                   <span class="w-full truncate text-left text-sm font-medium">
-                    {{ acc.nick && acc.name ? `${acc.nick} (${acc.name})` : acc.name || acc.nick || acc.uin }}
+                    {{ getAccountDisplayName(acc) }}
                   </span>
                   <div class="flex items-center gap-1.5">
                     <span

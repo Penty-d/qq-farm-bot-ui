@@ -17,7 +17,6 @@ const store = require('../models/store');
 const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef, normalizeAccountRef, resolveAccountId } = require('../services/account-resolver');
 const { createModuleLogger } = require('../services/logger');
-const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { sendPushooMessage } = require('../services/push');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const { 
@@ -138,7 +137,7 @@ function startAdminServer(dataProvider) {
     });
 
     app.use('/api', (req, res, next) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/auth/validate') return next();
+        if (req.path === '/login' || req.path === '/ping' || req.path === '/auth/validate' || req.path === '/code/receive') return next();
         return authRequired(req, res, next);
     });
 
@@ -538,12 +537,13 @@ function startAdminServer(dataProvider) {
             const strategy = store.getPlantingStrategy(id);
             const preferredSeed = store.getPreferredSeed(id);
             const friendQuietHours = store.getFriendQuietHours(id);
+            const fertilizerByLandLevel = store.getFertilizerByLandLevel(id);
             const automation = store.getAutomation(id);
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
                 : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 120 };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, fertilizerByLandLevel, automation, ui, offlineReminder } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -714,51 +714,65 @@ function startAdminServer(dataProvider) {
         }
     });
 
-    // ============ QR Code Login APIs (无需账号选择) ============
-    // 这些接口不需要 authRequired 也能调用（用于登录流程）
-    app.post('/api/qr/create', async (req, res) => {
-        try {
-            const result = await MiniProgramLoginSession.requestLoginCode();
-            res.json({ ok: true, data: result });
-        } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    });
+    // ============ 接收 Code（GET/POST），支持手机/ProxyPin 转发 ============
+    function handleCodeReceive(req, res) {
+        const clientIp = req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',')[0].trim() : (req.socket?.remoteAddress || req.ip || '');
+        const userAgent = req.get('user-agent') || '';
 
-    app.post('/api/qr/check', async (req, res) => {
-        const { code } = req.body || {};
+        adminLogger.info('[Code接收] 请求来源', { clientIp, userAgent: userAgent.slice(0, 80), method: req.method });
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[Code接收] 请求来源', { clientIp, userAgent: userAgent.slice(0, 80) });
+        }
+
+        const body = (req.body && typeof req.body === 'object') ? req.body : {};
+        const query = req.query || {};
+        let code = String(body.code || query.code || '').trim();
+
         if (!code) {
-            return res.status(400).json({ ok: false, error: 'Missing code' });
-        }
-
-        try {
-            const result = await MiniProgramLoginSession.queryStatus(code);
-
-            if (result.status === 'OK') {
-                const ticket = result.ticket;
-                const uin = result.uin || '';
-                const nickname = result.nickname || ''; // 获取昵称
-                const appid = '1112386029'; // Farm appid
-
-                const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid);
-
-                let avatar = '';
-                if (uin) {
-                    avatar = `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640`;
+            const raw = String(body.url || body.text || body.content || body.raw || '').trim();
+            if (raw) {
+                const urlMatch = raw.match(/[?&]code=([^&\s#]+)/i);
+                if (urlMatch && urlMatch[1]) code = decodeURIComponent(urlMatch[1]);
+                else {
+                    const pathMatch = raw.match(/\/code\/([a-zA-Z0-9_.-]+)/i);
+                    if (pathMatch && pathMatch[1]) code = pathMatch[1];
                 }
-
-                res.json({ ok: true, data: { status: 'OK', code: authCode, uin, avatar, nickname } });
-            } else if (result.status === 'Used') {
-                res.json({ ok: true, data: { status: 'Used' } });
-            } else if (result.status === 'Wait') {
-                res.json({ ok: true, data: { status: 'Wait' } });
-            } else {
-                res.json({ ok: true, data: { status: 'Error', error: result.msg } });
             }
-        } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
         }
-    });
+
+        const accountId = String(
+            body.accountId
+            || body.id
+            || body.uin
+            || body.qq
+            || query.accountId
+            || query.id
+            || query.uin
+            || query.qq
+            || req.headers['x-account-id']
+            || '',
+        ).trim();
+        const accountName = String(body.accountName || body.name || query.accountName || query.name || '').trim();
+        const uin = String(body.uin || body.qq || query.uin || query.qq || '').trim();
+
+        if (!code) {
+            adminLogger.info('code/receive 未解析到 code', { clientIp, bodyKeys: Object.keys(body), queryKeys: Object.keys(query) });
+            return res.status(400).json({ ok: false, error: '缺少 code 参数' });
+        }
+
+        const applyReceivedCode = provider && typeof provider.applyReceivedCode === 'function' ? provider.applyReceivedCode : null;
+        if (!applyReceivedCode) {
+            return res.status(500).json({ ok: false, error: '服务未就绪' });
+        }
+
+        applyReceivedCode({ authCode: code, accountId, accountName, uin });
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.send('1');
+    }
+
+    app.get('/api/code/receive', handleCodeReceive);
+    app.post('/api/code/receive', handleCodeReceive);
 
     app.get('*', (req, res) => {
         if (req.path.startsWith('/api') || req.path.startsWith('/game-config')) {

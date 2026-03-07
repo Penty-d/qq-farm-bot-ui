@@ -18,6 +18,8 @@ function createDataProvider(options) {
         startWorker,
         stopWorker,
         restartWorker,
+        startReloginWatcher,
+        applyReloginCode,
     } = options;
 
     function getStoredAccountsList() {
@@ -129,6 +131,7 @@ function createDataProvider(options) {
                 preferredSeedId,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
+                fertilizerByLandLevel: body.fertilizerByLandLevel,
             };
             store.applyConfigSnapshot(snapshot, { accountId });
             const rev = nextConfigRevision();
@@ -138,6 +141,7 @@ function createDataProvider(options) {
                 preferredSeed: store.getPreferredSeed(accountId),
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
+                fertilizerByLandLevel: store.getFertilizerByLandLevel(accountId),
                 configRevision: rev,
             };
         },
@@ -169,6 +173,9 @@ function createDataProvider(options) {
                 if (worker && worker.status && worker.status.status && worker.status.status.name) {
                     a.nick = worker.status.status.name;
                 }
+                if (worker && worker.status && worker.status.status && worker.status.status.avatarUrl && !a.avatar) {
+                    a.avatar = worker.status.status.avatarUrl;
+                }
             });
             return data;
         },
@@ -194,6 +201,20 @@ function createDataProvider(options) {
             const acc = findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
             restartWorker(acc);
+            return true;
+        },
+
+        /** 接收 code，直接当作登录凭证使用（不扫码），更新/创建账号并重启 */
+        applyReceivedCode: (opts) => {
+            if (typeof applyReloginCode !== 'function') return false;
+            const { authCode, accountId = '', accountName = '', uin = '' } = opts || {};
+            const resolvedAccountId = resolveAccountRefId(accountId || uin);
+            applyReloginCode({
+                accountId: resolvedAccountId || String(accountId || '').trim(),
+                accountName,
+                authCode: String(authCode || '').trim(),
+                uin: String(uin || '').trim(),
+            });
             return true;
         },
 

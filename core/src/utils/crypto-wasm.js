@@ -7,8 +7,8 @@ let decryptRaw = null;
 let generateTokenRaw = null;
 let createBufRaw = null;
 let destroyBufRaw = null;
-let encoder = new TextEncoder();
-let decoder = new TextDecoder();
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 let initPromise = null;
 
@@ -31,7 +31,7 @@ function initWasm() {
 
             WebAssembly.instantiate(wasmBuffer, importObject).then(({ instance }) => {
                 const exports = instance.exports;
-                try { exports.E(); } catch (e) { } // init_runtime
+                try { exports.E(); } catch { } // init_runtime
                 memory = exports.v;
                 generateTokenRaw = exports._;
                 encryptRaw = exports.J;  // In-place buffer encryption

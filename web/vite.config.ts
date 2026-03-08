@@ -8,8 +8,22 @@ import viteCompression from 'vite-plugin-compression'
 
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
+function normalizeBasePath(rawBase: string) {
+  let base = String(rawBase || '/').trim()
+  if (!base)
+    base = '/'
+  if (!base.startsWith('/'))
+    base = `/${base}`
+  if (!base.endsWith('/'))
+    base = `${base}/`
+  return base.replace(/\/{2,}/g, '/')
+}
+
+const appBasePath = normalizeBasePath('/qq-farm/')
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: appBasePath,
   plugins: [
     vue(),
     UnoCSS() as any,

@@ -2,7 +2,9 @@
 
 基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
 
-qq农场游戏交流群：1090049575
+新 qq农场游戏交流群：1077372084
+
+[Discord](https://discord.gg/suya45TU)
 
 ## 技术栈
 
@@ -28,15 +30,11 @@ qq农场游戏交流群：1090049575
 
 ---
 
-## 项目贡献
-
-克隆仓库并切换到pr分支进行修改，提交拉取请求的时候也是合并到pr分支，这么做是因为我没有太多时间单独审pr，把所有pr合并到一个分支过一段时间再一起审更方便，当我确认没有问题时就和连同新版本更新一起合并到主分支
-
 ## 功能特性
 
 ### 多账号管理
 - 账号新增、编辑、删除、启动、停止
-- 扫码登录（QQ）与手动输入 Code
+- 手动输入 Code
 - 账号被踢下线自动删除
 - 账号连续离线超时自动删除
 - 账号离线推送通知（支持 Bark、自定义 Webhook 等）
@@ -226,7 +224,6 @@ qq-farm-bot-ui/
 
 - 核心功能：[linguo2625469/qq-farm-bot](https://github.com/linguo2625469/qq-farm-bot)
 - 部分功能：[QianChenJun/qq-farm-bot](https://github.com/QianChenJun/qq-farm-bot)
-- 扫码登录：[lkeme/QRLib](https://github.com/lkeme/QRLib)
 
 ## 免责声明
 

@@ -22,6 +22,21 @@ const seedItemMap = new Map();  // seed_id -> item(type=5)
 const seedImageMap = new Map(); // seed_id -> image url
 const seedAssetImageMap = new Map(); // asset_name (Crop_xxx) -> image url
 
+function normalizeBasePath(rawBase) {
+    let base = String(rawBase || '/').trim();
+    if (!base) base = '/';
+    if (!base.startsWith('/')) base = `/${base}`;
+    if (!base.endsWith('/')) base = `${base}/`;
+    return base.replace(/\/{2,}/g, '/');
+}
+
+const publicBasePath = normalizeBasePath('/qq-farm/');
+
+function withPublicBase(pathname) {
+    const normalizedPath = String(pathname || '').replace(/^\/+/, '');
+    return `${publicBasePath}${normalizedPath}`;
+}
+
 /**
  * 加载配置文件
  */
@@ -97,7 +112,7 @@ function loadConfigs() {
             const files = fs.readdirSync(seedImageDir);
             for (const file of files) {
                 const filename = String(file || '');
-                const fileUrl = `/game-config/seed_images_named/${encodeURIComponent(file)}`;
+                const fileUrl = withPublicBase(`game-config/seed_images_named/${encodeURIComponent(file)}`);
 
                 // 1) id_..._Seed.png 命名，按 id 建立映射
                 const byId = filename.match(/^(\d+)_.*\.(?:png|jpg|jpeg|webp|gif)$/i);

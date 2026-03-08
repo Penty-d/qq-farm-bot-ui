@@ -2,6 +2,7 @@ import { useStorage } from '@vueuse/core'
 import axios from 'axios'
 import NProgress from 'nprogress'
 import { createRouter, createWebHistory } from 'vue-router'
+import { withAppBase } from '@/utils/base'
 import { menuRoutes } from './menu'
 import 'nprogress/nprogress.css'
 
@@ -22,7 +23,7 @@ async function ensureTokenValid() {
   if (validatingPromise)
     return validatingPromise
 
-  validatingPromise = axios.get('/api/auth/validate', {
+  validatingPromise = axios.get(withAppBase('api/auth/validate'), {
     headers: { 'x-admin-token': token },
     timeout: 6000,
   }).then((res) => {

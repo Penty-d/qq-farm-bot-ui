@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
 
@@ -8,6 +8,9 @@ export const useFriendStore = defineStore('friend', () => {
   const friendLands = ref<Record<string, any[]>>({})
   const friendLandsLoading = ref<Record<string, boolean>>({})
   const blacklist = ref<number[]>([])
+  const interactRecords = ref<any[]>([])
+  const interactLoading = ref(false)
+  const interactError = ref('')
 
   function buildPlantSummaryFromDetail(lands: any[], summary: any) {
     const stealNumFromSummary = Array.isArray(summary?.stealable) ? summary.stealable.length : null
@@ -103,6 +106,32 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  async function fetchInteractRecords(accountId: string) {
+    if (!accountId)
+      return
+    interactLoading.value = true
+    interactError.value = ''
+    interactRecords.value = []
+
+    try {
+      const res = await api.get('/api/interact-records', {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        interactRecords.value = Array.isArray(res.data.data) ? res.data.data : []
+      }
+      else {
+        interactError.value = res.data.error || '加载访客记录失败'
+      }
+    }
+    catch (error: any) {
+      interactError.value = error?.response?.data?.error || error?.message || '加载访客记录失败'
+    }
+    finally {
+      interactLoading.value = false
+    }
+  }
+
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
       return
@@ -140,9 +169,13 @@ export const useFriendStore = defineStore('friend', () => {
     friendLands,
     friendLandsLoading,
     blacklist,
+    interactRecords,
+    interactLoading,
+    interactError,
     fetchFriends,
     fetchBlacklist,
     toggleBlacklist,
+    fetchInteractRecords,
     fetchFriendLands,
     operate,
   }

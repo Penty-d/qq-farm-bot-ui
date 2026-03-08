@@ -91,6 +91,7 @@ function createDataProvider(options) {
         // 透传方法
         getLands: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getLands'),
         getFriends: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriends'),
+        getInteractRecords: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getInteractRecords'),
         getFriendBlacklist: async (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
             if (!accountId) return [];
@@ -129,6 +130,7 @@ function createDataProvider(options) {
                 preferredSeedId,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
+                friendStealBlockSeedIds: body.friendStealBlockSeedIds,
             };
             store.applyConfigSnapshot(snapshot, { accountId });
             const rev = nextConfigRevision();
@@ -138,6 +140,7 @@ function createDataProvider(options) {
                 preferredSeed: store.getPreferredSeed(accountId),
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
+                friendStealBlockSeedIds: store.getFriendStealBlockSeedIds(accountId),
                 configRevision: rev,
             };
         },

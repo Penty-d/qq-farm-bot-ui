@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { io } from 'socket.io-client'
 import { ref } from 'vue'
 import api from '@/api'
+import { withAppBase } from '@/utils/base'
 
 // Define interfaces for better type checking
 interface DailyGift {
@@ -103,7 +104,7 @@ export const useStatusStore = defineStore('status', () => {
       return socket
 
     socket = io('/', {
-      path: '/socket.io',
+      path: withAppBase('socket.io'),
       autoConnect: false,
       transports: ['websocket'],
       auth: {

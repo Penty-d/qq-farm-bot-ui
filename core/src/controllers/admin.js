@@ -307,6 +307,17 @@ function startAdminServer(dataProvider) {
     });
 
     // API: 好友农田详情
+    app.get('/api/interact-records', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const data = await provider.getInteractRecords(id);
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     app.get('/api/friend/:gid/lands', async (req, res) => {
         const id = getAccId(req);
         if (!id) return res.status(400).json({ ok: false });
@@ -549,6 +560,9 @@ function startAdminServer(dataProvider) {
             const preferredSeed = store.getPreferredSeed(id);
             const friendQuietHours = store.getFriendQuietHours(id);
             const automation = store.getAutomation(id);
+            const friendStealBlockSeedIds = store.getFriendStealBlockSeedIds
+                ? store.getFriendStealBlockSeedIds(id)
+                : [];
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
@@ -556,7 +570,7 @@ function startAdminServer(dataProvider) {
             const qrLogin = store.getQrLoginConfig
                 ? store.getQrLoginConfig()
                 : { apiDomain: 'q.qq.com' };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder, qrLogin } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, friendStealBlockSeedIds, ui, offlineReminder, qrLogin } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

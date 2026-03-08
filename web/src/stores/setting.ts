@@ -64,6 +64,7 @@ export interface SettingsState {
   preferredSeedId: number
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
+  friendStealExcludeSeedIds: number[]
   automation: AutomationConfig
   ui: UIConfig
   offlineReminder: OfflineConfig
@@ -76,6 +77,7 @@ export const useSettingStore = defineStore('setting', () => {
     preferredSeedId: 0,
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
+    friendStealExcludeSeedIds: [],
     automation: {},
     ui: {},
     offlineReminder: {
@@ -110,6 +112,7 @@ export const useSettingStore = defineStore('setting', () => {
         settings.value.preferredSeedId = d.preferredSeed || 0
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
+        settings.value.friendStealExcludeSeedIds = Array.isArray(d.friendStealExcludeSeedIds) ? d.friendStealExcludeSeedIds : []
         settings.value.automation = d.automation || {}
         settings.value.ui = d.ui || {}
         settings.value.offlineReminder = {
@@ -146,6 +149,7 @@ export const useSettingStore = defineStore('setting', () => {
         preferredSeedId: newSettings.preferredSeedId,
         intervals: newSettings.intervals,
         friendQuietHours: newSettings.friendQuietHours,
+        friendStealExcludeSeedIds: newSettings.friendStealExcludeSeedIds,
       }
 
       await api.post('/api/settings/save', settingsPayload, {

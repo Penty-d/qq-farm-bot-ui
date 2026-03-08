@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
+import FriendStealExcludeSelector from '@/components/settings/FriendStealExcludeSelector.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
@@ -25,6 +26,8 @@ const passwordSaving = ref(false)
 const offlineSaving = ref(false)
 const offlineTesting = ref(false)
 const qrSaving = ref(false)
+const cropCatalogLoading = ref(false)
+const cropCatalog = ref<Array<{ seedId: number, name: string, requiredLevel: number, image?: string }>>([])
 
 const modalVisible = ref(false)
 const modalConfig = ref({
@@ -42,6 +45,17 @@ function showAlert(message: string, type: 'primary' | 'danger' = 'primary') {
     isAlert: true,
   }
   modalVisible.value = true
+}
+
+function normalizeSeedIdList(value: unknown) {
+  const list = Array.isArray(value) ? value : []
+  const next = new Set<number>()
+  list.forEach((item) => {
+    const seedId = Number(item)
+    if (Number.isInteger(seedId) && seedId > 0)
+      next.add(seedId)
+  })
+  return Array.from(next).sort((a, b) => a - b)
 }
 
 const currentAccountName = computed(() => {
@@ -90,6 +104,7 @@ const localSettings = ref({
   preferredSeedId: 0,
   intervals: { farmMin: 2, farmMax: 2, friendMin: 10, friendMax: 10 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
+  friendStealExcludeSeedIds: [] as number[],
   automation: {
     farm: false,
     farm_manage: false,
@@ -203,8 +218,10 @@ function syncLocalSettings() {
       preferredSeedId: settings.value.preferredSeedId,
       intervals: settings.value.intervals,
       friendQuietHours: settings.value.friendQuietHours,
+      friendStealExcludeSeedIds: settings.value.friendStealExcludeSeedIds,
       automation: settings.value.automation,
     }))
+    localSettings.value.friendStealExcludeSeedIds = normalizeSeedIdList(localSettings.value.friendStealExcludeSeedIds)
 
     // Default automation values if missing
     if (!localSettings.value.automation) {
@@ -291,6 +308,26 @@ function syncLocalSettings() {
   }
 }
 
+async function loadCropCatalog() {
+  if (cropCatalogLoading.value || cropCatalog.value.length > 0)
+    return
+  cropCatalogLoading.value = true
+  try {
+    const { data } = await api.get('/api/crops')
+    if (data?.ok && Array.isArray(data.data)) {
+      cropCatalog.value = data.data.map((item: any) => ({
+        seedId: Number(item.seedId) || 0,
+        name: String(item.name || ''),
+        requiredLevel: Number(item.requiredLevel) || 0,
+        image: item.image ? String(item.image) : '',
+      })).filter((item: any) => item.seedId > 0)
+    }
+  }
+  finally {
+    cropCatalogLoading.value = false
+  }
+}
+
 async function loadData() {
   if (currentAccountId.value) {
     await settingStore.fetchSettings(currentAccountId.value)
@@ -301,6 +338,7 @@ async function loadData() {
 }
 
 onMounted(() => {
+  loadCropCatalog()
   loadData()
 })
 
@@ -460,6 +498,7 @@ async function saveAccountSettings() {
 
   saving.value = true
   try {
+    localSettings.value.friendStealExcludeSeedIds = normalizeSeedIdList(localSettings.value.friendStealExcludeSeedIds)
     const res = await settingStore.saveSettings(currentAccountId.value, localSettings.value)
     if (res.ok) {
       showAlert('账号设置已保存')
@@ -697,11 +736,19 @@ async function handleTestOffline() {
             <BaseSwitch v-model="localSettings.automation.farm_weed" label="自动除草" :disabled="farmDisabled" />
           </div>
 
-          <div class="flex flex-wrap gap-4 rounded bg-blue-50 p-2 text-sm dark:bg-blue-900/20" :class="{ 'opacity-50 pointer-events-none': friendDisabled }">
-            <BaseSwitch v-model="localSettings.automation.friend_steal" label="自动偷菜" :disabled="friendDisabled" />
-            <BaseSwitch v-model="localSettings.automation.friend_help" label="自动帮忙" :disabled="friendDisabled" />
-            <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" :disabled="friendDisabled" />
-            <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" :disabled="friendDisabled" />
+          <div class="space-y-3 rounded bg-blue-50 p-2 text-sm dark:bg-blue-900/20" :class="{ 'opacity-50 pointer-events-none': friendDisabled }">
+            <div class="flex flex-wrap gap-4">
+              <BaseSwitch v-model="localSettings.automation.friend_steal" label="自动偷菜" :disabled="friendDisabled" />
+              <BaseSwitch v-model="localSettings.automation.friend_help" label="自动帮忙" :disabled="friendDisabled" />
+              <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" :disabled="friendDisabled" />
+              <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" :disabled="friendDisabled" />
+            </div>
+            <FriendStealExcludeSelector
+              v-model="localSettings.friendStealExcludeSeedIds"
+              :options="cropCatalog"
+              :loading="cropCatalogLoading"
+              :disabled="friendDisabled"
+            />
           </div>
           <!-- Steal Crop Blacklist + Fertilizer -->
           <div class="space-y-3">

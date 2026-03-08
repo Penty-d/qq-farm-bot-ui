@@ -390,6 +390,22 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    app.get('/api/crops', async (req, res) => {
+        try {
+            const { getAllSeeds } = require('../config/gameConfig');
+            const data = getAllSeeds().sort((a, b) => {
+                const levelDiff = Number(a.requiredLevel || 0) - Number(b.requiredLevel || 0);
+                if (levelDiff !== 0) return levelDiff;
+                const seedDiff = Number(a.seedId || 0) - Number(b.seedId || 0);
+                if (seedDiff !== 0) return seedDiff;
+                return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
+            });
+            res.json({ ok: true, data });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     // API: 背包物品
     app.get('/api/bag', async (req, res) => {
         const id = getAccId(req);
@@ -563,6 +579,9 @@ function startAdminServer(dataProvider) {
             const strategy = store.getPlantingStrategy(id);
             const preferredSeed = store.getPreferredSeed(id);
             const friendQuietHours = store.getFriendQuietHours(id);
+            const friendStealExcludeSeedIds = store.getFriendStealExcludeSeedIds
+                ? store.getFriendStealExcludeSeedIds(id)
+                : [];
             const automation = store.getAutomation(id);
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
@@ -571,7 +590,7 @@ function startAdminServer(dataProvider) {
             const qrLogin = store.getQrLoginConfig
                 ? store.getQrLoginConfig()
                 : { apiDomain: 'q.qq.com' };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder, qrLogin } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, friendStealExcludeSeedIds, automation, ui, offlineReminder, qrLogin } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

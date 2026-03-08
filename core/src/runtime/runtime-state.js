@@ -41,6 +41,7 @@ function createRuntimeState(options) {
             preferredSeedId: store.getPreferredSeed(accountId),
             intervals: store.getIntervals(accountId),
             friendQuietHours: store.getFriendQuietHours(accountId),
+            friendStealExcludeSeedIds: store.getFriendStealExcludeSeedIds(accountId),
             friendBlacklist: store.getFriendBlacklist(accountId),
             __revision: configRevision,
         };

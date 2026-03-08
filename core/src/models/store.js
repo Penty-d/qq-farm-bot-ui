@@ -82,6 +82,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         start: '23:00',
         end: '07:00',
     },
+    friendStealExcludeSeedIds: [],
     friendBlacklist: [],
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
@@ -95,6 +96,7 @@ let accountFallbackConfig = {
     },
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
+    friendStealExcludeSeedIds: [...DEFAULT_ACCOUNT_CONFIG.friendStealExcludeSeedIds],
 };
 
 const globalConfig = {
@@ -227,12 +229,14 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
         if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];
     }
 
+    const rawExcludeSeedIds = Array.isArray(base.friendStealExcludeSeedIds) ? base.friendStealExcludeSeedIds : [];
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
     return {
         ...base,
         automation,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
+        friendStealExcludeSeedIds: normalizeSeedIdList(rawExcludeSeedIds),
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
@@ -293,6 +297,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
             start: normalizeTimeString(src.friendQuietHours.start, old.start || '23:00'),
             end: normalizeTimeString(src.friendQuietHours.end, old.end || '07:00'),
         };
+    }
+
+    if (Array.isArray(src.friendStealExcludeSeedIds)) {
+        cfg.friendStealExcludeSeedIds = normalizeSeedIdList(src.friendStealExcludeSeedIds);
     }
 
     if (Array.isArray(src.friendBlacklist)) {
@@ -450,6 +458,7 @@ function getConfigSnapshot(accountId) {
         preferredSeedId: cfg.preferredSeedId,
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
+        friendStealExcludeSeedIds: [...(cfg.friendStealExcludeSeedIds || [])],
         friendBlacklist: [...(cfg.friendBlacklist || [])],
         ui: { ...globalConfig.ui },
         qrLogin: normalizeQrLoginConfig(globalConfig.qrLogin),
@@ -505,6 +514,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
         };
     }
 
+    if (Array.isArray(cfg.friendStealExcludeSeedIds)) {
+        next.friendStealExcludeSeedIds = normalizeSeedIdList(cfg.friendStealExcludeSeedIds);
+    }
+
     if (Array.isArray(cfg.friendBlacklist)) {
         next.friendBlacklist = cfg.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
     }
@@ -539,6 +552,19 @@ function getPlantingStrategy(accountId) {
 
 function getIntervals(accountId) {
     return { ...getAccountConfigSnapshot(accountId).intervals };
+}
+
+function normalizeSeedIdList(list) {
+    const values = Array.isArray(list) ? list : [];
+    const seen = new Set();
+    const normalized = [];
+    for (const value of values) {
+        const seedId = Number.parseInt(value, 10);
+        if (!Number.isFinite(seedId) || seedId <= 0 || seen.has(seedId)) continue;
+        seen.add(seedId);
+        normalized.push(seedId);
+    }
+    return normalized.sort((a, b) => a - b);
 }
 
 function normalizeIntervals(intervals) {
@@ -581,6 +607,10 @@ function normalizeTimeString(v, fallback) {
 
 function getFriendQuietHours(accountId) {
     return { ...getAccountConfigSnapshot(accountId).friendQuietHours };
+}
+
+function getFriendStealExcludeSeedIds(accountId) {
+    return [...(getAccountConfigSnapshot(accountId).friendStealExcludeSeedIds || [])];
 }
 
 function getFriendBlacklist(accountId) {
@@ -706,6 +736,7 @@ module.exports = {
     getPlantingStrategy,
     getIntervals,
     getFriendQuietHours,
+    getFriendStealExcludeSeedIds,
     getFriendBlacklist,
     setFriendBlacklist,
     getUI,

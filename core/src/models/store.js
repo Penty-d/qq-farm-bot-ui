@@ -72,6 +72,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         end: '07:00',
     },
     friendBlacklist: [],
+    friendStealBlockSeedIds: [],
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
 
@@ -169,12 +170,14 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     }
 
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
+    const rawStealBlockSeedIds = Array.isArray(base.friendStealBlockSeedIds) ? base.friendStealBlockSeedIds : [];
     return {
         ...base,
         automation,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
+        friendStealBlockSeedIds: rawStealBlockSeedIds.map(Number).filter(n => Number.isFinite(n) && n > 0),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
@@ -234,6 +237,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (Array.isArray(src.friendBlacklist)) {
         cfg.friendBlacklist = src.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
+
+    if (Array.isArray(src.friendStealBlockSeedIds)) {
+        cfg.friendStealBlockSeedIds = src.friendStealBlockSeedIds.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    }
     }
 
     return cfg;
@@ -385,6 +392,7 @@ function getConfigSnapshot(accountId) {
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         friendBlacklist: [...(cfg.friendBlacklist || [])],
+        friendStealBlockSeedIds: [...(cfg.friendStealBlockSeedIds || [])],
         ui: { ...globalConfig.ui },
         qrLogin: normalizeQrLoginConfig(globalConfig.qrLogin),
     };
@@ -437,6 +445,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     if (Array.isArray(cfg.friendBlacklist)) {
         next.friendBlacklist = cfg.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
+
+    if (Array.isArray(cfg.friendStealBlockSeedIds)) {
+        next.friendStealBlockSeedIds = cfg.friendStealBlockSeedIds.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    }
     }
 
     if (cfg.ui && typeof cfg.ui === 'object') {
@@ -523,6 +535,18 @@ function setFriendBlacklist(accountId, list) {
     next.friendBlacklist = Array.isArray(list) ? list.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
     setAccountConfigSnapshot(accountId, next);
     return [...next.friendBlacklist];
+}
+
+function getFriendStealBlockSeedIds(accountId) {
+    return [...(getAccountConfigSnapshot(accountId).friendStealBlockSeedIds || [])];
+}
+
+function setFriendStealBlockSeedIds(accountId, list) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.friendStealBlockSeedIds = Array.isArray(list) ? list.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.friendStealBlockSeedIds];
 }
 
 function getUI() {
@@ -638,6 +662,8 @@ module.exports = {
     getFriendQuietHours,
     getFriendBlacklist,
     setFriendBlacklist,
+    getFriendStealBlockSeedIds,
+    setFriendStealBlockSeedIds,
     getUI,
     setUITheme,
     getOfflineReminder,

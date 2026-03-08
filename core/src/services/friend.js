@@ -5,7 +5,7 @@
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantName, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
 const { parentPort } = require('node:worker_threads');
-const { isAutomationOn, getFriendQuietHours, getFriendBlacklist } = require('../models/store');
+const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getFriendStealBlockSeedIds } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -423,6 +423,29 @@ async function checkCanOperateRemote(friendGid, operationId) {
 
 // ============ 好友土地分析 ============
 
+function buildStealBlockSeedSet() {
+    return new Set(
+        (getFriendStealBlockSeedIds() || [])
+            .map(Number)
+            .filter(n => Number.isFinite(n) && n > 0)
+    );
+}
+
+function filterStealableBySeedBlocklist(status, seedBlockSet) {
+    if (!status || !seedBlockSet || seedBlockSet.size <= 0) return status;
+
+    const filteredInfo = (status.stealableInfo || [])
+        .filter((info) => {
+            const seedId = toNum(info && info.seedId);
+            return !seedId || !seedBlockSet.has(seedId);
+        });
+    const allowedLandIds = new Set(filteredInfo.map(info => toNum(info.landId)).filter(id => id > 0));
+
+    status.stealableInfo = filteredInfo;
+    status.stealable = (status.stealable || []).filter(id => allowedLandIds.has(toNum(id)));
+    return status;
+}
+
 function analyzeFriendLands(lands, myGid, friendName = '') {
     const result = {
         stealable: [],   // 可偷
@@ -641,6 +664,7 @@ async function doFriendOperation(friendGid, opType) {
         const lands = enterReply.lands || [];
         const state = getUserState();
         const status = analyzeFriendLands(lands, state.gid, '');
+        filterStealableBySeedBlocklist(status, buildStealBlockSeedSet());
         let count = 0;
 
         if (opType === 'steal') {
@@ -740,7 +764,7 @@ async function doFriendOperation(friendGid, opType) {
 
 // ============ 拜访好友 ============
 
-async function visitFriend(friend, totalActions, myGid) {
+async function visitFriend(friend, totalActions, myGid, stealBlockSeedSet = null) {
     const { gid, name } = friend;
 
     let enterReply;
@@ -764,6 +788,7 @@ async function visitFriend(friend, totalActions, myGid) {
     }
 
     const status = analyzeFriendLands(lands, myGid, name);
+    filterStealableBySeedBlocklist(status, stealBlockSeedSet);
 
     // 执行操作
     const actions = [];
@@ -898,6 +923,7 @@ async function checkFriends() {
         const canPutBugOrWeed = canOperate(10004) || canOperate(10003);
         const autoBadEnabled = isAutomationOn('friend_bad');
         const blacklist = new Set(getFriendBlacklist());
+        const stealBlockSeedSet = buildStealBlockSeedSet();
 
         const priorityFriends = [];
         const otherFriends = [];

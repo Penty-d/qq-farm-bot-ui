@@ -24,6 +24,7 @@ const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDa
 const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
+const cryptoWasm = require('../utils/crypto-wasm');
 const { setLogHook, log, toNum } = require('../utils/utils');
 const { validateAutomation, validateIntervals, validateQuietHours } = require('../services/config-validator');
 
@@ -422,6 +423,7 @@ async function startBot(config) {
     }
 
     await loadProto();
+    await cryptoWasm.initWasm();
 
     log('系统', '正在连接服务器...');
 

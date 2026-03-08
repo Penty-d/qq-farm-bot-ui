@@ -17,6 +17,13 @@ const CONFIG = {
     friendCheckIntervalMax: 10000,// 新逻辑：好友巡查间隔最大值(ms)
     adminPort: Number(process.env.ADMIN_PORT || 3000), // 管理面板 HTTP 端口
     adminPassword: process.env.ADMIN_PASSWORD || 'admin',
+    device_info: {
+        client_version: "1.6.2.18_20260227",
+        sys_software: 'iOS 26.2.1',
+        network: 'wifi',
+        memory: '7672',
+        device_id: 'iPhone X<iPhone18,3>',
+    }
 };
 
 // 生长阶段枚举

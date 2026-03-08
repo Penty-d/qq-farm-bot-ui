@@ -10,6 +10,7 @@ const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendLandsDetail, doFriendOperation } = require('../services/friend');
+const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
 const { performDailyMonthCardGift, getMonthCardDailyState } = require('../services/monthcard');
@@ -578,6 +579,9 @@ async function handleApiCall(msg) {
                 break;
             case 'getFriends':
                 result = await getFriendsList();
+                break;
+            case 'getInteractRecords':
+                result = await getInteractRecords();
                 break;
             case 'getFriendBlacklist':
                 result = require('../models/store').getFriendBlacklist();

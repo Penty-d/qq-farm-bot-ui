@@ -307,6 +307,17 @@ function startAdminServer(dataProvider) {
     });
 
     // API: 好友农田详情
+    app.get('/api/interact-records', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const data = await provider.getInteractRecords(id);
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     app.get('/api/friend/:gid/lands', async (req, res) => {
         const id = getAccId(req);
         if (!id) return res.status(400).json({ ok: false });

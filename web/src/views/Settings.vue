@@ -127,27 +127,162 @@ const farmDisabled = computed(() => !localSettings.value.automation.farm_manage)
 
 interface StealCropOption {
   plantId: number
+  seedId: number | null
   name: string
   level: number | null
   image: string
 }
 
+interface AnalyticsCropMeta {
+  plantId: number
+  seedId: number | null
+  name: string
+  level: number | null
+  image: string
+}
+
+const analyticsCropMetas = ref<AnalyticsCropMeta[]>([])
+const stealBlacklistSearch = ref('')
+const stealBlacklistCollapsed = ref(true)
+const onlyShowUnselectedStealCrops = ref(false)
+
+function parsePositiveInt(input: unknown): number | null {
+  const value = Number.parseInt(String(input ?? ''), 10)
+  if (!Number.isFinite(value) || value <= 0)
+    return null
+  return value
+}
+
+function resolveStealCropLevel(seed: any): number | null {
+  const candidates = [
+    seed?.requiredLevel,
+    seed?.landLevelNeed,
+    seed?.land_level_need,
+    seed?.unlockLevel,
+    seed?.levelNeed,
+  ]
+
+  for (const candidate of candidates) {
+    const value = Number(candidate)
+    if (Number.isFinite(value) && value > 0)
+      return value
+  }
+
+  return null
+}
+
+function resolveStealCropImage(seed: any): string {
+  const candidates = [
+    seed?.image,
+    seed?.seedImage,
+    seed?.itemImage,
+    seed?.icon,
+    seed?.iconUrl,
+  ]
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim()
+    if (value)
+      return value
+  }
+
+  return ''
+}
+
+function normalizeAnalyticsCropLevel(input: unknown): number | null {
+  const value = Number(input)
+  if (!Number.isFinite(value) || value <= 0)
+    return null
+  return value
+}
+
+async function loadStealBlacklistAnalytics() {
+  try {
+    const res = await api.get('/api/analytics', {
+      params: { sort: 'level' },
+    })
+    const data = res?.data?.ok ? (res.data.data || []) : []
+    if (!Array.isArray(data)) {
+      analyticsCropMetas.value = []
+      return
+    }
+
+    const parsed: AnalyticsCropMeta[] = []
+    for (const item of data) {
+      const plantId = parsePositiveInt(item?.id ?? item?.plantId)
+      if (plantId === null)
+        continue
+      parsed.push({
+        plantId,
+        seedId: parsePositiveInt(item?.seedId),
+        name: String(item?.name || ''),
+        level: normalizeAnalyticsCropLevel(item?.level),
+        image: String(item?.image || '').trim(),
+      })
+    }
+    analyticsCropMetas.value = parsed
+  }
+  catch {
+    analyticsCropMetas.value = []
+  }
+}
+
+const analyticsCropMetaByPlantId = computed(() => {
+  const byPlantId = new Map<number, AnalyticsCropMeta>()
+  for (const item of analyticsCropMetas.value) {
+    const current = byPlantId.get(item.plantId)
+    if (!current) {
+      byPlantId.set(item.plantId, { ...item })
+      continue
+    }
+    if (current.seedId === null && item.seedId !== null)
+      current.seedId = item.seedId
+    if (current.level === null && item.level !== null)
+      current.level = item.level
+    if (!current.image && item.image)
+      current.image = item.image
+    if (!current.name && item.name)
+      current.name = item.name
+  }
+  return byPlantId
+})
+
 const stealCropOptions = computed<StealCropOption[]>(() => {
   const source = Array.isArray(seeds.value) ? seeds.value : []
   const byPlantId = new Map<number, StealCropOption>()
+  const isPlaceholderName = (name: string, plantId: number) => {
+    const normalized = String(name || '').trim()
+    return !normalized || normalized === `作物#${plantId}` || normalized === `浣滅墿#${plantId}`
+  }
 
-  for (const seed of source) {
-    const plantId = Number.parseInt(String(seed?.plantId ?? ''), 10)
-    if (!Number.isFinite(plantId) || plantId <= 0)
+  // 先用分析数据作为全量基准，避免登录后只显示商店返回的子集
+  for (const meta of analyticsCropMetas.value) {
+    const plantId = parsePositiveInt(meta?.plantId)
+    if (plantId === null)
       continue
 
-    const requiredLevel = Number(seed?.requiredLevel)
-    const level = Number.isFinite(requiredLevel) && requiredLevel >= 0 ? requiredLevel : null
+    byPlantId.set(plantId, {
+      plantId,
+      seedId: parsePositiveInt(meta?.seedId),
+      name: String(meta?.name || `作物#${plantId}`),
+      level: normalizeAnalyticsCropLevel(meta?.level),
+      image: String(meta?.image || '').trim(),
+    })
+  }
+
+  for (const seed of source) {
+    const plantId = parsePositiveInt(seed?.plantId)
+    if (plantId === null)
+      continue
+
+    const analyticsMeta = analyticsCropMetaByPlantId.value.get(plantId)
+    const seedIdFromSeed = parsePositiveInt(seed?.seedId ?? seed?.seed_id ?? seed?.itemId)
     const next: StealCropOption = {
       plantId,
-      name: String(seed?.name || (`作物#${plantId}`)),
-      level,
-      image: String(seed?.image || seed?.seedImage || '').trim(),
+      seedId: seedIdFromSeed ?? analyticsMeta?.seedId ?? null,
+      name: String(seed?.name || analyticsMeta?.name || `作物#${plantId}`),
+      level: analyticsMeta?.level ?? resolveStealCropLevel(seed),
+      image: resolveStealCropImage(seed) || String(analyticsMeta?.image || '').trim(),
     }
 
     const current = byPlantId.get(plantId)
@@ -156,11 +291,13 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
       continue
     }
 
+    if (current.seedId === null && next.seedId !== null)
+      current.seedId = next.seedId
     if (!current.image && next.image)
       current.image = next.image
     if (current.level === null && next.level !== null)
       current.level = next.level
-    if (!current.name && next.name)
+    if (isPlaceholderName(current.name, current.plantId) && next.name)
       current.name = next.name
   }
 
@@ -169,12 +306,53 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
     const bLevel = b.level === null ? Number.POSITIVE_INFINITY : b.level
     if (aLevel !== bLevel)
       return aLevel - bLevel
+
+    const aSeedId = a.seedId === null ? Number.POSITIVE_INFINITY : a.seedId
+    const bSeedId = b.seedId === null ? Number.POSITIVE_INFINITY : b.seedId
+    if (aSeedId !== bSeedId)
+      return aSeedId - bSeedId
+
     return a.plantId - b.plantId
   })
 })
-
 const stealBlacklistCount = computed(() => normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist).length)
+const stealBlacklistSet = computed(() => new Set(normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)))
 
+function isCropBlacklisted(plantId: number) {
+  return stealBlacklistSet.value.has(plantId)
+}
+
+function toggleStealBlacklistCrop(plantId: number) {
+  const current = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
+  if (current.includes(plantId)) {
+    localSettings.value.automation.friend_steal_blacklist = current.filter(id => id !== plantId)
+    return
+  }
+  localSettings.value.automation.friend_steal_blacklist = [...current, plantId]
+}
+
+const filteredStealCropOptions = computed(() => {
+  const keyword = stealBlacklistSearch.value.trim().toLowerCase()
+
+  return stealCropOptions.value.filter((crop) => {
+    const byName = crop.name.toLowerCase().includes(keyword)
+    const bySeedId = crop.seedId !== null && String(crop.seedId).includes(keyword)
+    const keywordMatched = !keyword || byName || bySeedId
+    const unselectedMatched = !onlyShowUnselectedStealCrops.value || !isCropBlacklisted(crop.plantId)
+    return keywordMatched && unselectedMatched
+  })
+})
+
+function filterUnselectedStealCrops() {
+  onlyShowUnselectedStealCrops.value = !onlyShowUnselectedStealCrops.value
+  if (onlyShowUnselectedStealCrops.value)
+    stealBlacklistSearch.value = ''
+}
+
+function clearStealFilter() {
+  onlyShowUnselectedStealCrops.value = false
+  stealBlacklistSearch.value = ''
+}
 const localOffline = ref({
   channel: 'webhook',
   reloginUrlMode: 'none',
@@ -301,7 +479,10 @@ async function loadData() {
     await settingStore.fetchSettings(currentAccountId.value)
     syncLocalSettings()
     // Always fetch seeds to ensure correct locked status for current account
-    await farmStore.fetchSeeds(currentAccountId.value)
+    await Promise.all([
+      farmStore.fetchSeeds(currentAccountId.value),
+      loadStealBlacklistAnalytics(),
+    ])
   }
 }
 
@@ -710,54 +891,122 @@ async function handleTestOffline() {
           </div>
           <!-- Steal Crop Blacklist + Fertilizer -->
           <div class="space-y-3">
-            <div class="border border-blue-200 rounded bg-blue-50/60 p-3 dark:border-blue-800/60 dark:bg-blue-900/10">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-sm text-blue-800 font-medium dark:text-blue-300">
-                  偷菜黑名单
+            <div class="border border-blue-200 rounded-lg bg-blue-50/70 p-3 text-gray-800 shadow-sm dark:border-blue-500/50 dark:bg-[#17243a] dark:text-white">
+              <div class="mb-1 flex items-center justify-between gap-3">
+                <div class="min-w-0 flex items-center gap-2">
+                  <div class="h-9 w-9 flex items-center justify-center rounded-lg border border-blue-300/70 bg-white/90 dark:border-blue-500/40 dark:bg-blue-500/20">
+                    <div class="i-carbon-filter text-xl text-blue-700 dark:text-blue-200" />
+                  </div>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <div class="truncate text-base font-semibold">
+                        排除作物
+                      </div>
+                      <div class="rounded-full border border-blue-300 bg-white/95 px-2 py-0.5 text-xs text-blue-700 shadow-sm dark:border-blue-300/60 dark:bg-blue-500/15 dark:text-blue-100">
+                        <span class="font-semibold">{{ stealBlacklistCount }} / {{ stealCropOptions.length }}</span>
+                      </div>
+                    </div>
+                    <p class="text-xs text-blue-700/90 dark:text-blue-200/85">
+                      勾选后，自动偷菜会跳过这些作物；
+                    </p>
+                  </div>
                 </div>
-                <div class="text-xs text-blue-700/80 dark:text-blue-300/80">
-                  已选 {{ stealBlacklistCount }} 项
-                </div>
+                <button
+                  type="button"
+                  class="h-9 w-9 flex items-center justify-center rounded-lg border border-blue-300/70 bg-white/90 text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-500/20 dark:text-blue-100 dark:hover:bg-blue-500/30"
+                  :aria-expanded="!stealBlacklistCollapsed"
+                  @click="stealBlacklistCollapsed = !stealBlacklistCollapsed"
+                >
+                  <div
+                    class="i-carbon-chevron-down text-lg transition-transform"
+                    :class="stealBlacklistCollapsed ? '' : 'rotate-180'"
+                  />
+                </button>
               </div>
 
-              <div v-if="stealCropOptions.length > 0" class="grid grid-cols-1 max-h-56 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
-                <label
-                  v-for="crop in stealCropOptions"
-                  :key="crop.plantId"
-                  class="flex cursor-pointer items-center gap-2 rounded bg-white px-2 py-1.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
+              <div v-if="!stealBlacklistCollapsed">
+                <div class="my-2 border-t border-blue-200/80 dark:border-blue-400/30" />
+
+                <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div class="text-xs text-blue-700/90 dark:text-blue-200/90">
+                    支持按作物名或 seedid 搜索
+                  </div>
+                  <div class="flex items-center justify-end gap-2">
+                    <BaseButton
+                      variant="outline"
+                      size="sm"
+                      class="!border-blue-300 !text-blue-700 hover:!bg-blue-100 dark:!border-blue-400/70 dark:!text-blue-100 dark:hover:!bg-blue-500/20"
+                      :disabled="stealBlacklistCount >= stealCropOptions.length"
+                      @click="filterUnselectedStealCrops"
+                    >
+                      排除筛选
+                    </BaseButton>
+                    <BaseButton
+                      variant="ghost"
+                      size="sm"
+                      class="!text-blue-700 hover:!bg-blue-100 dark:!text-blue-100 dark:hover:!bg-blue-500/20"
+                      :disabled="!stealBlacklistSearch && !onlyShowUnselectedStealCrops"
+                      @click="clearStealFilter"
+                    >
+                      清空
+                    </BaseButton>
+                  </div>
+                </div>
+
+                <div class="relative mb-2">
+                  <div class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-blue-500/70 dark:text-blue-200/70">
+                    <div class="i-carbon-search" />
+                  </div>
                   <input
-                    v-model="localSettings.automation.friend_steal_blacklist"
-                    :value="crop.plantId"
-                    type="checkbox"
-                    class="h-3.5 w-3.5"
+                    v-model="stealBlacklistSearch"
+                    type="text"
+                    placeholder="搜索作物名或 Seed ID"
+                    class="w-full border border-blue-200 rounded-lg bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none placeholder:text-gray-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-300/20 dark:border-blue-400/40 dark:bg-[#1c2b45] dark:text-blue-50 dark:placeholder:text-blue-200/50 dark:focus:border-blue-300/70"
                   >
-                  <img
-                    v-if="crop.image"
-                    :src="crop.image"
-                    :alt="crop.name"
-                    class="h-5 w-5 rounded object-cover"
+                </div>
+
+              <div v-if="stealCropOptions.length > 0">
+                <div
+                  v-if="filteredStealCropOptions.length > 0"
+                  class="max-h-56 grid grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3"
+                >
+                  <button
+                    v-for="crop in filteredStealCropOptions"
+                    :key="crop.plantId"
+                    type="button"
+                    class="flex w-full cursor-pointer items-center gap-2 rounded border bg-white px-2 py-1.5 text-left text-xs text-gray-700 transition dark:bg-gray-800 dark:text-gray-300"
+                    :class="isCropBlacklisted(crop.plantId)
+                      ? 'border-blue-500 ring-1 ring-blue-300/70 dark:border-blue-400 dark:ring-blue-700/50'
+                      : 'border-gray-200 hover:border-blue-300 dark:border-gray-700 dark:hover:border-blue-700'"
+                    :aria-pressed="isCropBlacklisted(crop.plantId)"
+                    @click="toggleStealBlacklistCrop(crop.plantId)"
                   >
-                  <div v-else class="h-5 w-5 flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                    <div class="i-carbon-image" />
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate text-xs">{{ crop.name }}</div>
-                    <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                      {{ crop.level === null ? 'Lv.?' : (`Lv.${crop.level}`) }} (#{{ crop.plantId }})
+                    <img
+                      v-if="crop.image"
+                      :src="crop.image"
+                      :alt="crop.name"
+                      class="h-[1.8rem] w-[1.8rem] rounded object-cover"
+                    >
+                    <div v-else class="h-[1.8rem] w-[1.8rem] flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                      <div class="i-carbon-image" />
                     </div>
-                  </div>
-                </label>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-xs font-medium">{{ crop.name }}</div>
+                      <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                        Seed ID: {{ crop.seedId === null ? '?' : crop.seedId }}   Lv.{{ crop.level === null ? '?' : crop.level }}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+                <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  未找到匹配作物，请调整关键词后重试。
+                </div>
               </div>
               <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                 暂无可选作物，请先等待种子列表加载完成。
               </div>
-
-              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                好友巡查自动偷菜时，命中黑名单作物将自动跳过。
-              </p>
             </div>
-
+            </div>
             <div class="border border-amber-200 rounded bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">
               <div class="mb-2 text-sm text-amber-800 font-medium dark:text-amber-300">
                 施肥范围
@@ -791,6 +1040,7 @@ async function handleTestOffline() {
               <BaseSwitch
                 v-model="localSettings.automation.fertilizer_multi_season"
                 label="多季补肥"
+                class="md:mb-2"
               />
             </div>
             <div class="flex flex-wrap items-center gap-4">
@@ -986,6 +1236,7 @@ async function handleTestOffline() {
               <BaseSwitch
                 v-model="localOffline.offlineDeleteEnabled"
                 label="启用离线删号"
+                class="md:mb-2"
               />
             </div>
           </div>

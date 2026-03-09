@@ -26,6 +26,38 @@ const form = reactive({
   platform: 'qq',
 })
 
+function extractLoginCode(input: string) {
+  const raw = String(input || '').trim()
+  if (!raw)
+    return ''
+
+  const compact = raw.replace(/[\r\n]+/g, '').trim()
+
+  if (/^https?:\/\//i.test(compact)) {
+    try {
+      const url = new URL(compact)
+      const code = String(url.searchParams.get('code') || '').trim()
+      if (code)
+        return code
+    }
+    catch {
+      // Ignore URL parse failures and fall back to regex extraction.
+    }
+  }
+
+  const match = compact.match(/\bcode=([^&#\s]+)/i)
+  if (match && match[1]) {
+    try {
+      return decodeURIComponent(match[1]).trim()
+    }
+    catch {
+      return match[1].trim()
+    }
+  }
+
+  return compact
+}
+
 const { pause: stopQRCheck, resume: startQRCheck } = useIntervalFn(async () => {
   if (!qrData.value)
     return
@@ -148,7 +180,10 @@ async function addAccount(data: any) {
 
 async function submitManual() {
   errorMessage.value = ''
-  if (!form.code) {
+  const code = extractLoginCode(form.code)
+  form.code = code
+
+  if (!code) {
     errorMessage.value = '请输入Code 或 进行扫码'
     return
   }
@@ -156,14 +191,6 @@ async function submitManual() {
   if (!form.name && props.editData) {
     errorMessage.value = '请输入名称'
     return
-  }
-
-  let code = form.code.trim()
-  // Try to extract code from URL if present
-  const match = code.match(/[?&]code=([^&]+)/i)
-  if (match && match[1]) {
-    code = decodeURIComponent(match[1])
-    form.code = code // Update UI
   }
 
   // 检查是否仅修改了备注
@@ -236,6 +263,12 @@ watch(() => props.show, (newVal) => {
     qrData.value = null
     qrStatus.value = ''
   }
+})
+
+watch(() => form.code, (value) => {
+  const parsed = extractLoginCode(value)
+  if (parsed !== value)
+    form.code = parsed
 })
 </script>
 
@@ -321,6 +354,9 @@ watch(() => props.show, (newVal) => {
             placeholder="请输入登录 Code"
             :rows="3"
           />
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            支持直接粘贴完整登录链接，系统会自动提取并填入 Code。
+          </p>
 
           <BaseSelect
             v-if="!editData"

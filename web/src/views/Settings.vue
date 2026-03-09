@@ -248,6 +248,25 @@ const analyticsCropMetaByPlantId = computed(() => {
 const stealCropOptions = computed<StealCropOption[]>(() => {
   const source = Array.isArray(seeds.value) ? seeds.value : []
   const byPlantId = new Map<number, StealCropOption>()
+  const isPlaceholderName = (name: string, plantId: number) => {
+    const normalized = String(name || '').trim()
+    return !normalized || normalized === `作物#${plantId}` || normalized === `浣滅墿#${plantId}`
+  }
+
+  // 先用分析数据作为全量基准，避免登录后只显示商店返回的子集
+  for (const meta of analyticsCropMetas.value) {
+    const plantId = parsePositiveInt(meta?.plantId)
+    if (plantId === null)
+      continue
+
+    byPlantId.set(plantId, {
+      plantId,
+      seedId: parsePositiveInt(meta?.seedId),
+      name: String(meta?.name || `作物#${plantId}`),
+      level: normalizeAnalyticsCropLevel(meta?.level),
+      image: String(meta?.image || '').trim(),
+    })
+  }
 
   for (const seed of source) {
     const plantId = parsePositiveInt(seed?.plantId)
@@ -259,7 +278,7 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
     const next: StealCropOption = {
       plantId,
       seedId: seedIdFromSeed ?? analyticsMeta?.seedId ?? null,
-      name: String(seed?.name || analyticsMeta?.name || ('作物#' + plantId)),
+      name: String(seed?.name || analyticsMeta?.name || `作物#${plantId}`),
       level: analyticsMeta?.level ?? resolveStealCropLevel(seed),
       image: resolveStealCropImage(seed) || String(analyticsMeta?.image || '').trim(),
     }
@@ -276,7 +295,7 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
       current.image = next.image
     if (current.level === null && next.level !== null)
       current.level = next.level
-    if (!current.name && next.name)
+    if (isPlaceholderName(current.name, current.plantId) && next.name)
       current.name = next.name
   }
 
@@ -294,7 +313,6 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
     return a.plantId - b.plantId
   })
 })
-
 const stealBlacklistCount = computed(() => normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist).length)
 const stealBlacklistSet = computed(() => new Set(normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)))
 

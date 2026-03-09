@@ -122,7 +122,7 @@ run_as_repo_user() {
 }
 
 # -------------------------
-# Safe FS helpers
+# Safe FS helpers (P0 fix)
 # -------------------------
 assert_safe_install_dir() {
   local dir="$1"
@@ -149,7 +149,7 @@ safe_chown_install_dir() {
 }
 
 # -------------------------
-# Safe .env reader (NO source)
+# Safe .env reader (P1 fix: NO source)
 # -------------------------
 read_env_value() {
   # Usage: read_env_value "/path/.env" "KEY"
@@ -158,7 +158,6 @@ read_env_value() {
   local key="$2"
   [[ -f "$file" ]] || return 1
 
-  # match lines like: KEY=VALUE   (ignore leading spaces, ignore commented lines)
   local line val
   line="$(
     grep -E "^[[:space:]]*${key}[[:space:]]*=" "$file" 2>/dev/null \
@@ -390,10 +389,10 @@ prepare_install_dir() {
 
   assert_safe_install_dir "$INSTALL_DIR"
 
-  # ✅ 只创建 INSTALL_DIR（不会误操作父目录）
+  # P0 fix: only mkdir INSTALL_DIR itself
   $SUDO mkdir -p -- "$INSTALL_DIR"
 
-  # ✅ 只对 INSTALL_DIR 做 chown（不会 chown /opt 等父目录）
+  # P0 fix: only chown INSTALL_DIR itself
   local u
   u="$(repo_user)"
   safe_chown_install_dir "$INSTALL_DIR" "$u"
@@ -448,4 +447,216 @@ compose_down() {
 }
 
 compose_logs() {
-  title
+  title "查看日志（tail=200）"
+  (cd "$INSTALL_DIR" && docker compose logs -f --tail=200)
+}
+
+compose_ps() {
+  title "查看状态（docker compose ps）"
+  (cd "$INSTALL_DIR" && docker compose ps)
+}
+
+detect_and_update_repo() {
+  title "检测并更新项目"
+
+  (cd "$INSTALL_DIR" && git rev-parse --is-inside-work-tree >/dev/null 2>&1) || die "目录不是 git 仓库：${INSTALL_DIR}"
+
+  local local_head remote_head_primary remote_head_fallback remote_head
+  local_head="$(cd "$INSTALL_DIR" && git rev-parse HEAD)"
+  info "当前版本：${local_head:0:7}"
+
+  remote_head_primary="$(git_remote_head_hash "$REPO_URL_PRIMARY" "$BRANCH")"
+  remote_head_fallback="$(git_remote_head_hash "$REPO_URL_FALLBACK" "$BRANCH")"
+
+  if [[ -n "$remote_head_primary" ]]; then
+    remote_head="$remote_head_primary"
+    info "远端版本（主地址）：${remote_head:0:7}"
+  elif [[ -n "$remote_head_fallback" ]]; then
+    remote_head="$remote_head_fallback"
+    warn "主地址无法获取远端版本，使用备用地址远端版本：${remote_head:0:7}"
+  else
+    warn "无法获取远端版本（主/备均失败）。将直接尝试 pull（主失败再备）。"
+    remote_head=""
+  fi
+
+  if [[ -n "$remote_head" && "$local_head" == "$remote_head" ]]; then
+    ok "已是最新，无需更新"
+    return 1
+  fi
+
+  if [[ -n "$(cd "$INSTALL_DIR" && git status --porcelain)" ]]; then
+    warn "检测到本地有未提交修改，更新可能覆盖改动。"
+    read -r -p "仍要继续更新吗？(y/N): " ans || true
+    if [[ "${ans:-}" != "y" && "${ans:-}" != "Y" ]]; then
+      warn "已取消更新"
+      return 2
+    fi
+  fi
+
+  info "开始更新（git pull --rebase）..."
+  git_pull_rebase_with_fallback "$BRANCH"
+  ok "更新完成：$(cd "$INSTALL_DIR" && git rev-parse HEAD | cut -c1-7)"
+  return 0
+}
+
+read_current_settings_for_summary() {
+  PANEL_PORT="${PANEL_PORT:-$PANEL_PORT_DEFAULT}"
+  ADMIN_PASSWORD="${ADMIN_PASSWORD:-$ADMIN_PASSWORD_DEFAULT}"
+
+  # P1 fix: do NOT source .env
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    local pw
+    pw="$(read_env_value "${INSTALL_DIR}/.env" "ADMIN_PASSWORD" || true)"
+    if [[ -n "${pw:-}" ]]; then
+      ADMIN_PASSWORD="$pw"
+    fi
+  fi
+
+  if [[ -f "${INSTALL_DIR}/docker-compose.override.yml" ]]; then
+    local p
+    p="$(awk -F'[:"]+' '/- *[0-9]+:3000/{gsub(/ /,""); print $2; exit}' "${INSTALL_DIR}/docker-compose.override.yml" || true)"
+    PANEL_PORT="${p:-$PANEL_PORT_DEFAULT}"
+  fi
+}
+
+final_summary() {
+  local panel_port="$1"
+  local admin_password="$2"
+
+  title "最终信息汇总"
+  hr
+  printf '%s\n' "安装目录: ${INSTALL_DIR}"
+  printf '%s\n' "面板地址: http://<服务器IP>:${panel_port}/"
+  printf '%s\n' "面板端口: ${panel_port} (宿主机 -> 容器 3000)"
+  if [[ "${SHOW_PASSWORD_IN_SUMMARY}" == "1" ]]; then
+    printf '%s\n' "面板密码: ${admin_password}"
+    printf '%s\n' "提示: 注意终端回显/历史记录风险。可修改 SHOW_PASSWORD_IN_SUMMARY=0 关闭明文密码输出。"
+  else
+    printf '%s\n' "面板密码: (已隐藏；可查看 ${INSTALL_DIR}/.env)"
+  fi
+  printf '%s\n' "Docker 镜像加速器: ${DOCKER_MIRROR_URL}"
+  printf '%s\n' "Git 主地址: ${REPO_URL_PRIMARY}"
+  printf '%s\n' "Git 备用地址: ${REPO_URL_FALLBACK}"
+  hr
+  printf '%s\n' "常用命令："
+  printf '%s\n' "  - 查看状态：cd ${INSTALL_DIR} && docker compose ps"
+  printf '%s\n' "  - 查看日志：cd ${INSTALL_DIR} && docker compose logs -f --tail=200"
+  printf '%s\n' "  - 更新项目：重新运行脚本选择【2】"
+  hr
+}
+
+# -------------------------
+# Menu (NO COLOR)
+# -------------------------
+show_menu() {
+  cat <<'EOF'
+
+===============================
+ QQ Farm Bot UI 一键脚本菜单 By:acewinner1999
+===============================
+1) 安装/初始化并启动（自动安装 Docker 添加镜像加速器 并安装QQ农场绿玩面板）
+2) 检测并更新项目（如有更新则重建并重启）
+3) 启动容器（docker compose up -d --build）
+4) 停止容器（docker compose down）
+5) 查看日志（docker compose logs -f）
+6) 查看状态（docker compose ps）
+0) 退出
+
+EOF
+}
+
+print_banner() {
+  hr
+  printf '%s\n' "QQ Farm Bot UI 一键脚本 By:acewinner1999"
+  printf '%s\n' "Repo:     ${REPO_URL_PRIMARY}"
+  printf '%s\n' "Fallback: ${REPO_URL_FALLBACK}"
+  hr
+}
+
+# -------------------------
+# Main
+# -------------------------
+main() {
+  print_banner
+  need_root_or_sudo
+  ensure_basic_deps
+
+  while true; do
+    show_menu
+    read -r -p "请选择操作: " choice || true
+    case "${choice:-}" in
+      1)
+        ensure_docker_installed
+        ensure_compose_available
+        configure_docker_mirror
+        ensure_docker_group
+
+        clone_or_keep_repo
+
+        title "初始化参数（端口/密码）"
+        PANEL_PORT="${PANEL_PORT:-}"
+        ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+
+        if [[ -z "${PANEL_PORT}" ]]; then
+          prompt_value "请输入面板映射端口（宿主机端口 1-65535）" "$PANEL_PORT_DEFAULT" PANEL_PORT
+        fi
+        until validate_port "$PANEL_PORT"; do
+          warn "端口不合法：$PANEL_PORT"
+          prompt_value "请重新输入面板映射端口（1-65535）" "$PANEL_PORT_DEFAULT" PANEL_PORT
+        done
+
+        if [[ -z "${ADMIN_PASSWORD}" ]]; then
+          prompt_value "请输入面板管理员密码（将写入 .env）" "$ADMIN_PASSWORD_DEFAULT" ADMIN_PASSWORD
+        fi
+
+        write_override_compose "$PANEL_PORT" "$ADMIN_PASSWORD"
+        compose_up
+        final_summary "$PANEL_PORT" "$ADMIN_PASSWORD"
+        ;;
+      2)
+        [[ -d "${INSTALL_DIR}/.git" ]] || { warn "未找到仓库：${INSTALL_DIR}（请先执行 1 安装）"; continue; }
+
+        if detect_and_update_repo; then
+          warn "检测到更新，开始重建并重启..."
+          compose_up
+        else
+          info "无需更新或更新被取消"
+        fi
+
+        PANEL_PORT=""
+        ADMIN_PASSWORD=""
+        read_current_settings_for_summary
+        final_summary "$PANEL_PORT" "$ADMIN_PASSWORD"
+        ;;
+      3)
+        [[ -d "${INSTALL_DIR}/.git" ]] || { warn "未找到仓库：${INSTALL_DIR}（请先执行 1 安装）"; continue; }
+        compose_up
+
+        PANEL_PORT=""
+        ADMIN_PASSWORD=""
+        read_current_settings_for_summary
+        final_summary "$PANEL_PORT" "$ADMIN_PASSWORD"
+        ;;
+      4)
+        [[ -d "${INSTALL_DIR}/.git" ]] || { warn "未找到仓库：${INSTALL_DIR}"; continue; }
+        compose_down
+        ;;
+      5)
+        [[ -d "${INSTALL_DIR}/.git" ]] || { warn "未找到仓库：${INSTALL_DIR}"; continue; }
+        compose_logs
+        ;;
+      6)
+        [[ -d "${INSTALL_DIR}/.git" ]] || { warn "未找到仓库：${INSTALL_DIR}"; continue; }
+        compose_ps
+        ;;
+      0)
+        exit 0
+        ;;
+      *)
+        warn "无效选择：${choice:-}"
+        ;;
+    esac
+  done
+}
+
+main "$@"

@@ -337,6 +337,8 @@ async function getBagDetail() {
         }
         if (!name) name = `物品${id}`;
         const interactionType = info && info.interaction_type ? String(info.interaction_type) : '';
+        const priceId = info ? (Number(info.price_id) || 0) : 0;
+        const priceUnit = priceId === 1005 ? '金豆豆' : priceId === 1002 ? '点券' : '金';
 
         if (!merged.has(id)) {
             merged.set(id, {
@@ -347,7 +349,9 @@ async function getBagDetail() {
                 image: getItemImageById(id),
                 category,
                 itemType: info ? (Number(info.type) || 0) : 0,
+                priceId,
                 price: info ? (Number(info.price) || 0) : 0,
+                priceUnit,
                 level: info ? (Number(info.level) || 0) : 0,
                 interactionType,
                 hoursText: '',
@@ -368,6 +372,17 @@ async function getBagDetail() {
         return row;
     });
     items.sort((a, b) => {
+        const taRaw = Number(a.itemType || 0);
+        const tbRaw = Number(b.itemType || 0);
+        const typePriority = new Map([
+            [17, 0],
+            [5, 1],
+            [6, 2],
+        ]);
+        const ta = typePriority.has(taRaw) ? typePriority.get(taRaw) : (taRaw > 0 ? (1000 + taRaw) : Number.MAX_SAFE_INTEGER);
+        const tb = typePriority.has(tbRaw) ? typePriority.get(tbRaw) : (tbRaw > 0 ? (1000 + tbRaw) : Number.MAX_SAFE_INTEGER);
+        if (ta !== tb) return ta - tb;
+
         const ca = Number(a.count || 0);
         const cb = Number(b.count || 0);
         if (cb !== ca) return cb - ca;

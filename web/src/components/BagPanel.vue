@@ -9,28 +9,37 @@ import { useStatusStore } from '@/stores/status'
 const accountStore = useAccountStore()
 const bagStore = useBagStore()
 const statusStore = useStatusStore()
+
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { items, loading: bagLoading } = storeToRefs(bagStore)
 const { status, loading: statusLoading, error: statusError, realtimeConnected } = storeToRefs(statusStore)
 
 const imageErrors = ref<Record<string | number, boolean>>({})
 
+function getPriceClass(item: any) {
+  const priceId = Number(item?.priceId || 0)
+  if (priceId === 1005)
+    return 'text-amber-400 dark:text-amber-300'
+  if (priceId === 1002)
+    return 'text-sky-400 dark:text-sky-300'
+  return 'text-gray-400'
+}
+
 async function loadBag() {
-  if (currentAccountId.value) {
-    const acc = currentAccount.value
-    if (!acc)
-      return
+  if (!currentAccountId.value)
+    return
 
-    if (!realtimeConnected.value) {
-      await statusStore.fetchStatus(currentAccountId.value)
-    }
+  const acc = currentAccount.value
+  if (!acc)
+    return
 
-    if (acc.running && status.value?.connection?.connected) {
-      bagStore.fetchBag(currentAccountId.value)
-    }
-    // 重置图片错误状态
-    imageErrors.value = {}
-  }
+  if (!realtimeConnected.value)
+    await statusStore.fetchStatus(currentAccountId.value)
+
+  if (acc.running && status.value?.connection?.connected)
+    await bagStore.fetchBag(currentAccountId.value)
+
+  imageErrors.value = {}
 }
 
 onMounted(() => {
@@ -64,7 +73,7 @@ useIntervalFn(loadBag, 60000)
       请选择账号后查看背包
     </div>
 
-    <div v-else-if="statusError" class="border border-red-200 rounded-lg bg-red-50 p-8 text-center text-red-500 shadow dark:border-red-800 dark:bg-red-900/20">
+    <div v-else-if="statusError" class="rounded-lg border border-red-200 bg-red-50 p-8 text-center text-red-500 shadow dark:border-red-800 dark:bg-red-900/20">
       <div class="mb-2 text-lg font-bold">
         获取数据失败
       </div>
@@ -76,7 +85,7 @@ useIntervalFn(loadBag, 60000)
     <div v-else-if="!status?.connection?.connected" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
       <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
       <div>
-        <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
+        <div class="text-lg font-medium text-gray-700 dark:text-gray-300">
           账号未登录
         </div>
         <div class="mt-1 text-sm text-gray-400">
@@ -93,14 +102,14 @@ useIntervalFn(loadBag, 60000)
       <div
         v-for="item in items"
         :key="item.id"
-        class="group relative flex flex-col items-center border rounded-lg bg-white p-3 transition dark:border-gray-700 dark:bg-gray-800 hover:shadow-md"
+        class="group relative flex flex-col items-center rounded-lg border bg-white p-3 transition hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
       >
-        <div class="absolute left-2 top-2 text-xs text-gray-400 font-mono">
+        <div class="absolute left-2 top-2 font-mono text-xs text-gray-400">
           #{{ item.id }}
         </div>
 
         <div
-          class="thumb-wrap mb-2 mt-6 h-16 w-16 flex items-center justify-center rounded-full bg-gray-50 dark:bg-gray-700/50"
+          class="thumb-wrap mb-2 mt-6 flex h-16 w-16 items-center justify-center rounded-full bg-gray-50 dark:bg-gray-700/50"
           :data-fallback="(item.name || '物').slice(0, 1)"
         >
           <img
@@ -111,7 +120,7 @@ useIntervalFn(loadBag, 60000)
             loading="lazy"
             @error="imageErrors[item.id] = true"
           >
-          <div v-else class="text-2xl text-gray-400 font-bold uppercase">
+          <div v-else class="text-2xl font-bold text-gray-400 uppercase">
             {{ (item.name || '物').slice(0, 1) }}
           </div>
         </div>
@@ -125,7 +134,7 @@ useIntervalFn(loadBag, 60000)
           <span>
             类型: {{ item.itemType || 0 }}
             <span v-if="item.level > 0"> · Lv{{ item.level }}</span>
-            <span v-if="item.price > 0"> · {{ item.price }}金</span>
+            <span v-if="item.price > 0" :class="getPriceClass(item)"> · {{ item.price }}{{ item.priceUnit || '金' }}</span>
           </span>
         </div>
 
@@ -141,6 +150,7 @@ useIntervalFn(loadBag, 60000)
 .thumb-wrap.fallback img {
   display: none;
 }
+
 .thumb-wrap.fallback::after {
   content: attr(data-fallback);
   font-size: 1.5rem;

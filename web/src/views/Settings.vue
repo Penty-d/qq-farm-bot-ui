@@ -681,15 +681,8 @@ async function handleTestOffline() {
               :disabled="friendDisabled"
             />
           </div>
-          <!-- Steal Exclude Crops + Fertilizer -->
+          <!-- Fertilizer -->
           <div class="space-y-3">
-            <FriendStealExcludeSelector
-              v-model="localSettings.friendStealExcludeSeedIds"
-              :options="cropCatalog"
-              :loading="cropCatalogLoading"
-              :disabled="friendDisabled"
-            />
-
             <div class="border border-amber-200 rounded bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">
               <div class="mb-2 text-sm text-amber-800 font-medium dark:text-amber-300">
                 施肥范围

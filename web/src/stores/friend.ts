@@ -13,23 +13,14 @@ export const useFriendStore = defineStore('friend', () => {
   const interactError = ref('')
 
   function buildPlantSummaryFromDetail(lands: any[], summary: any) {
-    const stealNumFromSummary = Array.isArray(summary?.stealable) ? summary.stealable.length : null
-    const dryNumFromSummary = Array.isArray(summary?.needWater) ? summary.needWater.length : null
-    const weedNumFromSummary = Array.isArray(summary?.needWeed) ? summary.needWeed.length : null
-    const insectNumFromSummary = Array.isArray(summary?.needBug) ? summary.needBug.length : null
+    let stealNum = 0
+    let dryNum = 0
+    let weedNum = 0
+    let insectNum = 0
 
-    let stealNum = stealNumFromSummary
-    let dryNum = dryNumFromSummary
-    let weedNum = weedNumFromSummary
-    let insectNum = insectNumFromSummary
-
-    if (stealNum === null || dryNum === null || weedNum === null || insectNum === null) {
-      stealNum = 0
-      dryNum = 0
-      weedNum = 0
-      insectNum = 0
-
-      for (const land of (Array.isArray(lands) ? lands : [])) {
+    const detailLands = Array.isArray(lands) ? lands : []
+    if (detailLands.length > 0) {
+      for (const land of detailLands) {
         if (!land || !land.unlocked)
           continue
         if (land.status === 'stealable')
@@ -41,6 +32,12 @@ export const useFriendStore = defineStore('friend', () => {
         if (land.needBug)
           insectNum++
       }
+    }
+    else {
+      stealNum = Array.isArray(summary?.stealable) ? summary.stealable.length : 0
+      dryNum = Array.isArray(summary?.needWater) ? summary.needWater.length : 0
+      weedNum = Array.isArray(summary?.needWeed) ? summary.needWeed.length : 0
+      insectNum = Array.isArray(summary?.needBug) ? summary.needBug.length : 0
     }
 
     return {

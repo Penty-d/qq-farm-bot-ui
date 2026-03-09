@@ -15,11 +15,11 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Dashboard.vue'),
   },
   {
-    path: 'personal',
-    name: 'personal',
-    label: '个人',
-    icon: 'i-carbon-user',
-    component: () => import('@/views/Personal.vue'),
+    path: 'access-control',
+    name: 'accessControl',
+    label: '权限',
+    icon: 'i-carbon-user-role',
+    component: () => import('@/views/AccessControl.vue'),
   },
   {
     path: 'friends',

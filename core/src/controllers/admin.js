@@ -20,15 +20,27 @@ const { createModuleLogger } = require('../services/logger');
 const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { sendPushooMessage } = require('../services/push');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
-const { 
-    hashPassword: secureHash, 
-    verifyPassword,
+const {
     rateLimitMiddleware,
     recordLoginAttempts,
-    clearLoginAttempts
+    clearLoginAttempts,
 } = require('../services/security');
-
-const hashPassword = (pwd) => secureHash(pwd); // 兼容旧接口
+const {
+    isAdmin,
+    ensureDefaultAdmin,
+    registerUser,
+    loginUser,
+    changePassword,
+    createSessionManager,
+    ensureAccountAccess,
+    filterAccountsForUser,
+    markAccountsForCurrentUser,
+    buildAccountStatusStats,
+    createInviteCode,
+    listInviteCodes,
+    deleteInviteCode,
+    listAllUsers,
+} = require('../services/user-auth');
 const adminLogger = createModuleLogger('admin');
 
 let app = null;
@@ -67,15 +79,20 @@ function startAdminServer(dataProvider) {
     app = express();
     app.use(express.json());
 
-    const tokens = new Set();
+    ensureDefaultAdmin().catch((error) => {
+        adminLogger.error('init default admin failed', { error: error.message });
+    });
 
-    const issueToken = () => crypto.randomBytes(24).toString('hex');
+    const sessions = createSessionManager();
+
     const authRequired = (req, res, next) => {
-        const token = req.headers['x-admin-token'];
-        if (!token || !tokens.has(token)) {
+        const token = String(req.headers['x-admin-token'] || '').trim();
+        const currentUser = sessions.getUser(token);
+        if (!token || !currentUser) {
             return res.status(401).json({ ok: false, error: 'Unauthorized' });
         }
         req.adminToken = token;
+        req.currentUser = currentUser;
         next();
     };
 
@@ -104,63 +121,101 @@ function startAdminServer(dataProvider) {
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
 
     // 登录与鉴权
-    app.post('/api/login', async (req, res) => {
-        const { password } = req.body || {};
-        
-        // 记录登录尝试
+    app.post('/api/register', async (req, res) => {
+        const body = req.body || {};
         try {
-            recordLoginAttempts(req.ip);
+            const user = await registerUser({
+                username: body.username,
+                password: body.password,
+                inviteCode: body.inviteCode,
+            });
+            res.json({ ok: true, data: { user } });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: error.message });
+        }
+    });
+
+    app.post('/api/login', async (req, res) => {
+        const { username, password } = req.body || {};
+
+        try {
+            recordLoginAttempts(`${req.ip}:${String(username || '').trim().toLowerCase()}`);
         } catch (error) {
             return res.status(429).json({ ok: false, error: error.message });
         }
-        
-        const input = String(password || '');
-        const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
-        let ok = false;
-        
-        if (storedHash) {
-            // 优先使用安全验证 (支持PBKDF2和SHA256)
-            ok = await verifyPassword(input, storedHash);
-        } else {
-            // 兼容旧配置
-            ok = input === String(CONFIG.adminPassword || '');
+
+        try {
+            const user = await loginUser({ username, password });
+            clearLoginAttempts(`${req.ip}:${String(username || '').trim().toLowerCase()}`);
+            const token = sessions.issue(user);
+            return res.json({ ok: true, data: { token, user } });
+        } catch (error) {
+            return res.status(401).json({ ok: false, error: error.message });
         }
-        
-        if (!ok) {
-            return res.status(401).json({ ok: false, error: 'Invalid password' });
-        }
-        
-        // 登录成功
-        clearLoginAttempts(req.ip);
-        const token = issueToken();
-        tokens.add(token);
-        res.json({ ok: true, data: { token } });
     });
 
     app.use('/api', (req, res, next) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/auth/validate') return next();
+        if (
+            req.path === '/login'
+            || req.path === '/register'
+            || req.path === '/qr/create'
+            || req.path === '/qr/check'
+            || req.path === '/auth/validate'
+        ) return next();
         return authRequired(req, res, next);
+    });
+
+    app.get('/api/me', (req, res) => {
+        return res.json({ ok: true, data: { user: req.currentUser } });
+    });
+
+    app.get('/api/admin/users', (req, res) => {
+        try {
+            const users = listAllUsers(req.currentUser);
+            return res.json({ ok: true, data: { users } });
+        } catch (error) {
+            return res.status(403).json({ ok: false, error: error.message });
+        }
+    });
+
+    app.get('/api/admin/invites', (req, res) => {
+        try {
+            const invites = listInviteCodes(req.currentUser);
+            return res.json({ ok: true, data: { invites } });
+        } catch (error) {
+            return res.status(403).json({ ok: false, error: error.message });
+        }
+    });
+
+    app.post('/api/admin/invites', (req, res) => {
+        try {
+            const maxUses = Number.parseInt((req.body || {}).maxUses, 10) || 1;
+            const invite = createInviteCode(req.currentUser, maxUses);
+            return res.json({ ok: true, data: invite });
+        } catch (error) {
+            const statusCode = error.message === 'Forbidden' ? 403 : 400;
+            return res.status(statusCode).json({ ok: false, error: error.message });
+        }
+    });
+
+    app.delete('/api/admin/invites/:code', (req, res) => {
+        try {
+            const deleted = deleteInviteCode(req.currentUser, req.params.code);
+            return res.json({ ok: true, data: { deleted } });
+        } catch (error) {
+            const statusCode = error.message === 'Forbidden' ? 403 : 400;
+            return res.status(statusCode).json({ ok: false, error: error.message });
+        }
     });
 
     app.post('/api/admin/change-password', async (req, res) => {
         const body = req.body || {};
-        const oldPassword = String(body.oldPassword || '');
-        const newPassword = String(body.newPassword || '');
-        if (newPassword.length < 4) {
-            return res.status(400).json({ ok: false, error: '新密码长度至少为 4 位' });
+        try {
+            await changePassword(req.currentUser, body.oldPassword, body.newPassword);
+            return res.json({ ok: true });
+        } catch (error) {
+            return res.status(400).json({ ok: false, error: error.message });
         }
-        const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
-        const ok = storedHash
-            ? await verifyPassword(oldPassword, storedHash)
-            : oldPassword === String(CONFIG.adminPassword || '');
-        if (!ok) {
-            return res.status(400).json({ ok: false, error: '原密码错误' });
-        }
-        const nextHash = await hashPassword(newPassword);
-        if (store.setAdminPasswordHash) {
-            store.setAdminPasswordHash(nextHash);
-        }
-        res.json({ ok: true });
     });
 
     app.get('/api/ping', (req, res) => {
@@ -169,11 +224,12 @@ function startAdminServer(dataProvider) {
 
     app.get('/api/auth/validate', (req, res) => {
         const token = String(req.headers['x-admin-token'] || '').trim();
-        const valid = !!token && tokens.has(token);
+        const user = sessions.getUser(token);
+        const valid = !!token && !!user;
         if (!valid) {
             return res.status(401).json({ ok: false, data: { valid: false }, error: 'Unauthorized' });
         }
-        res.json({ ok: true, data: { valid: true } });
+        res.json({ ok: true, data: { valid: true, user } });
     });
 
     // API: 调度任务快照（用于调度收敛排查）
@@ -193,7 +249,7 @@ function startAdminServer(dataProvider) {
     app.post('/api/logout', (req, res) => {
         const token = req.adminToken;
         if (token) {
-            tokens.delete(token);
+            sessions.revoke(token);
             if (io) {
                 for (const socket of io.sockets.sockets.values()) {
                     if (String(socket.data.adminToken || '') === String(token)) {
@@ -243,9 +299,44 @@ function startAdminServer(dataProvider) {
         return resolved || input;
     };
 
+    function getOwnedAccountList(currentUser) {
+        const rawAccounts = provider && typeof provider.getAccounts === 'function'
+            ? provider.getAccounts()
+            : { accounts: getAccountList() };
+        const accounts = Array.isArray(rawAccounts.accounts) ? rawAccounts.accounts : [];
+        const enhanced = markAccountsForCurrentUser(accounts, currentUser, (accountId) => {
+            try {
+                return provider && typeof provider.getStatus === 'function'
+                    ? provider.getStatus(accountId)
+                    : null;
+            } catch {
+                return null;
+            }
+        });
+        const filtered = filterAccountsForUser(enhanced, currentUser);
+        return {
+            accounts: filtered,
+            nextId: rawAccounts.nextId || 1,
+            stats: buildAccountStatusStats(filtered),
+        };
+    }
+
+    function getAccessibleAccount(req, rawRef) {
+        const resolvedId = resolveAccId(rawRef);
+        if (!resolvedId) {
+            const error = new Error('Missing x-account-id');
+            error.statusCode = 400;
+            throw error;
+        }
+        const account = findAccountByRef(getAccountList(), resolvedId);
+        ensureAccountAccess(req.currentUser, account);
+        return account;
+    }
+
     // Helper to get account ID from header
     function getAccId(req) {
-        return resolveAccId(req.headers['x-account-id']);
+        const account = getAccessibleAccount(req, req.headers['x-account-id']);
+        return String(account.id || '');
     }
 
     // API: 完整状态
@@ -417,26 +508,30 @@ function startAdminServer(dataProvider) {
     // API: 启动账号
     app.post('/api/accounts/:id/start', (req, res) => {
         try {
-            const ok = provider.startAccount(resolveAccId(req.params.id));
+            const target = getAccessibleAccount(req, req.params.id);
+            const ok = provider.startAccount(String(target.id || ''));
             if (!ok) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
             }
             res.json({ ok: true });
         } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
+            const statusCode = Number(e.statusCode) || 500;
+            res.status(statusCode).json({ ok: false, error: e.message });
         }
     });
 
     // API: 停止账号
     app.post('/api/accounts/:id/stop', (req, res) => {
         try {
-            const ok = provider.stopAccount(resolveAccId(req.params.id));
+            const target = getAccessibleAccount(req, req.params.id);
+            const ok = provider.stopAccount(String(target.id || ''));
             if (!ok) {
                 return res.status(404).json({ ok: false, error: 'Account not found' });
             }
             res.json({ ok: true });
         } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
+            const statusCode = Number(e.statusCode) || 500;
+            res.status(statusCode).json({ ok: false, error: e.message });
         }
     });
 
@@ -580,7 +675,7 @@ function startAdminServer(dataProvider) {
     // API: 账号管理
     app.get('/api/accounts', (req, res) => {
         try {
-            const data = provider.getAccounts();
+            const data = getOwnedAccountList(req.currentUser);
             res.json({ ok: true, data });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -592,11 +687,7 @@ function startAdminServer(dataProvider) {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const rawRef = body.id || body.accountId || body.uin || req.headers['x-account-id'];
-            const accountList = getAccountList();
-            const target = findAccountByRef(accountList, rawRef);
-            if (!target || !target.id) {
-                return res.status(404).json({ ok: false, error: 'Account not found' });
-            }
+            const target = getAccessibleAccount(req, rawRef);
 
             const remark = String(body.remark !== undefined ? body.remark : body.name || '').trim();
             if (!remark) {
@@ -604,7 +695,12 @@ function startAdminServer(dataProvider) {
             }
 
             const accountId = String(target.id);
-            const data = addOrUpdateAccount({ id: accountId, name: remark });
+            const data = addOrUpdateAccount({
+                id: accountId,
+                name: remark,
+                ownerUserId: target.ownerUserId,
+                ownerUsername: target.ownerUsername,
+            });
             if (provider && typeof provider.setRuntimeAccountName === 'function') {
                 provider.setRuntimeAccountName(accountId, remark);
             }
@@ -613,7 +709,8 @@ function startAdminServer(dataProvider) {
             }
             res.json({ ok: true, data });
         } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
+            const statusCode = Number(e.statusCode) || 500;
+            res.status(statusCode).json({ ok: false, error: e.message });
         }
     });
 
@@ -623,20 +720,32 @@ function startAdminServer(dataProvider) {
             const isUpdate = !!body.id;
             const resolvedUpdateId = isUpdate ? resolveAccId(body.id) : '';
             const payload = isUpdate ? { ...body, id: resolvedUpdateId || String(body.id) } : body;
+
             let wasRunning = false;
-            if (isUpdate && provider.isAccountRunning) {
-                wasRunning = provider.isAccountRunning(payload.id);
+            if (isUpdate) {
+                const targetAccount = getAccessibleAccount(req, payload.id);
+                payload.id = String(targetAccount.id || '');
+                payload.ownerUserId = targetAccount.ownerUserId;
+                payload.ownerUsername = targetAccount.ownerUsername;
+                if (provider.isAccountRunning) {
+                    wasRunning = provider.isAccountRunning(payload.id);
+                }
+            } else {
+                payload.ownerUserId = Number(req.currentUser.id) || 0;
+                payload.ownerUsername = String(req.currentUser.username || '');
             }
 
-            // 检查是否仅修改了备注信息
             let onlyRemarkChanged = false;
             if (isUpdate) {
-                const oldAccounts = provider.getAccounts();
+                const oldAccounts = getOwnedAccountList(req.currentUser);
                 const oldAccount = oldAccounts.accounts.find(a => a.id === payload.id);
                 if (oldAccount) {
-                    // 检查 payload 中是否只包含 id 和 name 字段
                     const payloadKeys = Object.keys(payload);
-                    const onlyIdAndName = payloadKeys.length === 2 && payloadKeys.includes('id') && payloadKeys.includes('name');
+                    const onlyIdAndName = payloadKeys.length === 4
+                        && payloadKeys.includes('id')
+                        && payloadKeys.includes('name')
+                        && payloadKeys.includes('ownerUserId')
+                        && payloadKeys.includes('ownerUsername');
                     if (onlyIdAndName) {
                         onlyRemarkChanged = true;
                     }
@@ -654,33 +763,32 @@ function startAdminServer(dataProvider) {
                     accountName
                 );
             }
-            // 如果是新增，自动启动
             if (!isUpdate) {
                 const newAcc = data.accounts[data.accounts.length - 1];
                 if (newAcc) provider.startAccount(newAcc.id);
             } else if (wasRunning && !onlyRemarkChanged) {
-                // 如果是更新，且之前在运行，且不是仅修改备注，则重启
                 provider.restartAccount(payload.id);
             }
-            res.json({ ok: true, data });
+            res.json({ ok: true, data: getOwnedAccountList(req.currentUser) });
         } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
+            const statusCode = Number(e.statusCode) || 500;
+            res.status(statusCode).json({ ok: false, error: e.message });
         }
     });
 
     app.delete('/api/accounts/:id', (req, res) => {
         try {
-            const resolvedId = resolveAccId(req.params.id) || String(req.params.id || '');
-            const before = provider.getAccounts();
-            const target = findAccountByRef(before.accounts || [], req.params.id);
+            const target = getAccessibleAccount(req, req.params.id);
+            const resolvedId = String(target.id || '');
             provider.stopAccount(resolvedId);
-            const data = deleteAccount(resolvedId);
+            deleteAccount(resolvedId);
             if (provider.addAccountLog) {
                 provider.addAccountLog('delete', `删除账号: ${(target && target.name) || req.params.id}`, resolvedId, target ? target.name : '');
             }
-            res.json({ ok: true, data });
+            res.json({ ok: true, data: getOwnedAccountList(req.currentUser) });
         } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
+            const statusCode = Number(e.statusCode) || 500;
+            res.status(statusCode).json({ ok: false, error: e.message });
         }
     });
 
@@ -689,8 +797,14 @@ function startAdminServer(dataProvider) {
         try {
             const limit = Number.parseInt(req.query.limit) || 100;
             const list = provider.getAccountLogs ? provider.getAccountLogs(limit) : [];
-            // 与当前 web 前端保持一致：直接返回数组
-            res.json(Array.isArray(list) ? list : []);
+            if (!Array.isArray(list)) {
+                return res.json([]);
+            }
+            if (isAdmin(req.currentUser)) {
+                return res.json(list);
+            }
+            const visibleIds = new Set(getOwnedAccountList(req.currentUser).accounts.map(item => String(item.id || '')));
+            return res.json(list.filter(item => visibleIds.has(String((item && item.accountId) || ''))));
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -699,7 +813,21 @@ function startAdminServer(dataProvider) {
     // API: 日志
     app.get('/api/logs', (req, res) => {
         const queryAccountIdRaw = (req.query.accountId || '').toString().trim();
-        const id = queryAccountIdRaw ? (queryAccountIdRaw === 'all' ? '' : resolveAccId(queryAccountIdRaw)) : getAccId(req);
+        let id = '';
+        if (queryAccountIdRaw) {
+            if (queryAccountIdRaw === 'all') {
+                if (!isAdmin(req.currentUser)) {
+                    return res.status(403).json({ ok: false, error: 'Forbidden' });
+                }
+                id = '';
+            } else {
+                const target = getAccessibleAccount(req, queryAccountIdRaw);
+                id = String(target.id || '');
+            }
+        } else {
+            id = getAccId(req);
+        }
+
         const options = {
             limit: Number.parseInt(req.query.limit) || 100,
             tag: req.query.tag || '',
@@ -803,18 +931,29 @@ function startAdminServer(dataProvider) {
 
     const applySocketSubscription = (socket, accountRef = '') => {
         const incoming = String(accountRef || '').trim();
+        const currentUser = socket.data.currentUser || null;
         const resolved = incoming && incoming !== 'all' ? resolveAccId(incoming) : '';
         for (const room of socket.rooms) {
             if (room.startsWith('account:')) socket.leave(room);
         }
+
         if (resolved) {
-            socket.join(`account:${resolved}`);
-            socket.data.accountId = resolved;
-        } else {
+            const account = findAccountByRef(getAccountList(), resolved);
+            try {
+                ensureAccountAccess(currentUser, account);
+                socket.join(`account:${resolved}`);
+                socket.data.accountId = resolved;
+            } catch {
+                socket.data.accountId = '';
+            }
+        } else if (isAdmin(currentUser)) {
             socket.join('account:all');
             socket.data.accountId = '';
+        } else {
+            socket.data.accountId = '';
         }
-        socket.emit('subscribed', { accountId: socket.data.accountId || 'all' });
+
+        socket.emit('subscribed', { accountId: socket.data.accountId || (isAdmin(currentUser) ? 'all' : '') });
 
         try {
             const targetId = socket.data.accountId || '';
@@ -831,9 +970,17 @@ function startAdminServer(dataProvider) {
             }
             if (provider && typeof provider.getAccountLogs === 'function') {
                 const currentAccountLogs = provider.getAccountLogs(100);
-                socket.emit('account-logs:snapshot', {
-                    logs: Array.isArray(currentAccountLogs) ? currentAccountLogs : [],
-                });
+                const safeLogs = Array.isArray(currentAccountLogs) ? currentAccountLogs : [];
+                if (isAdmin(currentUser)) {
+                    socket.emit('account-logs:snapshot', {
+                        logs: safeLogs,
+                    });
+                } else {
+                    const visibleIds = new Set(getOwnedAccountList(currentUser).accounts.map(item => String(item.id || '')));
+                    socket.emit('account-logs:snapshot', {
+                        logs: safeLogs.filter(item => visibleIds.has(String((item && item.accountId) || ''))),
+                    });
+                }
             }
         } catch {
             // ignore snapshot push errors
@@ -862,10 +1009,11 @@ function startAdminServer(dataProvider) {
             ? String(socket.handshake.headers['x-admin-token'])
             : '';
         const token = authToken || headerToken;
-        if (!token || !tokens.has(token)) {
+        if (!token || !sessions.has(token)) {
             return next(new Error('Unauthorized'));
         }
         socket.data.adminToken = token;
+        socket.data.currentUser = sessions.getUser(token);
         return next();
     });
 

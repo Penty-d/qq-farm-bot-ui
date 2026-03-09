@@ -1,18 +1,20 @@
-import { useStorage } from '@vueuse/core'
 import axios from 'axios'
 import NProgress from 'nprogress'
+import { createPinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { menuRoutes } from './menu'
 import 'nprogress/nprogress.css'
 
 NProgress.configure({ showSpinner: false })
 
-const adminToken = useStorage('admin_token', '')
+const pinia = createPinia()
 let validatedToken = ''
 let validatingPromise: Promise<boolean> | null = null
 
 async function ensureTokenValid() {
-  const token = String(adminToken.value || '').trim()
+  const authStore = useAuthStore(pinia)
+  const token = String(authStore.token || '').trim()
   if (!token)
     return false
 
@@ -27,8 +29,10 @@ async function ensureTokenValid() {
     timeout: 6000,
   }).then((res) => {
     const valid = !!(res.data && res.data.ok && res.data.data && res.data.data.valid)
-    if (valid)
+    if (valid) {
       validatedToken = token
+      authStore.setAuth(token, res.data.data?.user || authStore.user || null)
+    }
     return valid
   }).catch(() => false).finally(() => {
     validatingPromise = null
@@ -60,27 +64,31 @@ const router = createRouter({
 router.beforeEach(async (to, _from) => {
   NProgress.start()
 
+  const authStore = useAuthStore(pinia)
+
   if (to.name === 'login') {
-    if (!adminToken.value) {
+    if (!authStore.token) {
       validatedToken = ''
+      authStore.clearAuth()
       return true
     }
     const valid = await ensureTokenValid()
     if (valid)
       return { name: 'dashboard' }
-    adminToken.value = ''
+    authStore.clearAuth()
     validatedToken = ''
     return true
   }
 
-  if (!adminToken.value) {
+  if (!authStore.token) {
     validatedToken = ''
+    authStore.clearAuth()
     return { name: 'login' }
   }
 
   const valid = await ensureTokenValid()
   if (!valid) {
-    adminToken.value = ''
+    authStore.clearAuth()
     validatedToken = ''
     return { name: 'login' }
   }

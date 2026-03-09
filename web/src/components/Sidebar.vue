@@ -2,7 +2,7 @@
 import { useDateFormat, useIntervalFn, useNow } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/api'
 import AccountModal from '@/components/AccountModal.vue'
 import RemarkModal from '@/components/RemarkModal.vue'
@@ -11,13 +11,16 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import { menuRoutes } from '@/router/menu'
 import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import { useStatusStore } from '@/stores/status'
 
+const router = useRouter()
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const route = useRoute()
-const { accounts, currentAccount } = storeToRefs(accountStore)
+const { accounts, currentAccount, stats } = storeToRefs(accountStore)
 const { status, realtimeConnected } = storeToRefs(statusStore)
 const { sidebarOpen } = storeToRefs(appStore)
 
@@ -204,6 +207,14 @@ function selectAccount(acc: any) {
 
 const version = __APP_VERSION__
 
+const currentUsername = computed(() => authStore.user?.username || '未登录用户')
+const isAdmin = computed(() => authStore.user?.role === 'admin')
+
+async function handleLogout() {
+  await authStore.logout()
+  router.push('/login')
+}
+
 watch(
   () => route.path,
   () => {
@@ -259,6 +270,12 @@ watch(
               </span>
               <div class="mt-0.5 flex items-center gap-1.5">
                 <span
+                  v-if="currentAccount?.ownerUsername"
+                  class="rounded bg-amber-100 px-1 py-0.2 text-[10px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                >
+                  {{ currentAccount.belongsToCurrentUser ? '我的' : `归属:${currentAccount.ownerUsername}` }}
+                </span>
+                <span
                   v-if="platform"
                   class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
                   :class="getPlatformClass(currentAccount?.platform)"
@@ -306,7 +323,7 @@ watch(
                   </span>
                   <div class="flex items-center gap-1.5">
                     <span
-                      v-if="platform"
+                      v-if="acc.platform"
                       class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
                       :class="getPlatformClass(acc.platform)"
                     >
@@ -369,6 +386,39 @@ watch(
 
     <!-- Footer Status -->
     <div class="mt-auto border-t border-gray-100 bg-gray-50/50 p-4 dark:border-gray-700/50 dark:bg-gray-800/50">
+      <div class="mb-3 rounded-xl bg-white/80 p-3 text-xs shadow-sm dark:bg-gray-700/40">
+        <div class="mb-2 flex items-center justify-between">
+          <div class="font-semibold text-gray-700 dark:text-gray-200">
+            {{ currentUsername }}
+          </div>
+          <span
+            class="rounded px-2 py-0.5 text-[10px]"
+            :class="isAdmin ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'"
+          >
+            {{ isAdmin ? '管理员' : '普通用户' }}
+          </span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="rounded bg-gray-50 px-2 py-1 dark:bg-gray-800/60">
+            <div class="text-[10px] text-gray-400">账号总数</div>
+            <div class="font-bold text-gray-700 dark:text-gray-200">{{ stats.total }}</div>
+          </div>
+          <div class="rounded bg-green-50 px-2 py-1 dark:bg-green-900/10">
+            <div class="text-[10px] text-green-500">运行中</div>
+            <div class="font-bold text-green-600 dark:text-green-300">{{ stats.running }}</div>
+          </div>
+          <div class="rounded bg-red-50 px-2 py-1 dark:bg-red-900/10">
+            <div class="text-[10px] text-red-500">异常</div>
+            <div class="font-bold text-red-600 dark:text-red-300">{{ stats.error }}</div>
+          </div>
+        </div>
+        <button
+          class="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+          @click="handleLogout"
+        >
+          退出登录
+        </button>
+      </div>
       <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
         <div class="flex items-center gap-1.5">
           <div

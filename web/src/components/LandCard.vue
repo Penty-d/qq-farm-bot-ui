@@ -110,10 +110,12 @@ function getLandTypeName(level: number) {
       </span>
     </div>
 
-    <div class="mb-1 text-[10px] text-gray-400">
-      {{ getLandTypeName(land.level) }}
+    <div class="text-[10px] text-gray-400">// 土地等级
+      {{ getLandTypeName(land.level) }} 
     </div>
-
+    <div class="mb-1 text-[10px] text-gray-400">// 季数
+      季数 {{ land.totalSeason > 0 ? (land.currentSeason + '/' + land.totalSeason) : '-/-' }}
+    </div>
     <!-- Status Badges -->
     <div class="mt-auto flex origin-bottom scale-90 gap-0.5 text-[10px]">
       <span v-if="land.needWater" class="rounded bg-blue-100 px-0.5 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">水</span>

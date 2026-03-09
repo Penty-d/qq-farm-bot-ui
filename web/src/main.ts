@@ -1,15 +1,14 @@
-import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { pinia } from '@/stores'
 import { useToastStore } from '@/stores/toast'
 import App from './App.vue'
-import router from './router'
+import { router } from './router'
 import '@unocss/reset/tailwind.css'
 import 'virtual:uno.css'
 import './style.css'
 
 const app = createApp(App)
-const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)

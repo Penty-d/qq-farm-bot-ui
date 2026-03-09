@@ -40,6 +40,8 @@ const invites = ref<InviteItem[]>([])
 const users = ref<UserItem[]>([])
 const loadingInvites = ref(false)
 const creatingInvite = ref(false)
+const deletingUserId = ref<number | null>(null)
+const copyingInviteCode = ref('')
 const inviteError = ref('')
 const userError = ref('')
 
@@ -152,6 +154,64 @@ async function handleDeleteInvite(code: string) {
   }
   catch (e: any) {
     inviteError.value = e.response?.data?.error || e.message || '删除邀请码失败'
+  }
+}
+
+async function handleCopyInvite(code: string) {
+  try {
+    copyingInviteCode.value = code
+
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(code)
+      return
+    }
+
+    const textarea = document.createElement('textarea')
+    textarea.value = code
+    textarea.setAttribute('readonly', 'true')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+
+    const copied = document.execCommand('copy')
+    document.body.removeChild(textarea)
+
+    if (!copied)
+      throw new Error('当前环境不支持复制到剪贴板')
+  }
+  catch (e: any) {
+    inviteError.value = e?.message || '复制邀请码失败'
+  }
+  finally {
+    if (copyingInviteCode.value === code)
+      copyingInviteCode.value = ''
+  }
+}
+
+async function handleDeleteUser(userId: number) {
+  userError.value = ''
+
+  if (!window.confirm('确认删除该用户吗？删除后不可恢复。'))
+    return
+
+  deletingUserId.value = userId
+  try {
+    const res = await api.delete(`/api/admin/users/${userId}`)
+    if (res.data?.ok) {
+      await loadAdminData()
+    }
+    else {
+      userError.value = res.data?.error || '删除用户失败'
+    }
+  }
+  catch (e: any) {
+    userError.value = e.response?.data?.error || e.message || '删除用户失败'
+  }
+  finally {
+    deletingUserId.value = null
   }
 }
 
@@ -284,7 +344,19 @@ onMounted(() => {
             </thead>
             <tbody>
               <tr v-for="item in invites" :key="item.code" class="border-b dark:border-gray-700/60">
-                <td class="px-3 py-3 font-mono font-semibold">{{ item.code }}</td>
+                <td class="px-3 py-3">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono font-semibold">{{ item.code }}</span>
+                    <BaseButton
+                      variant="ghost"
+                      class="text-blue-500"
+                      :disabled="copyingInviteCode === item.code"
+                      @click="handleCopyInvite(item.code)"
+                    >
+                      {{ copyingInviteCode === item.code ? '复制中...' : '复制' }}
+                    </BaseButton>
+                  </div>
+                </td>
                 <td class="px-3 py-3">{{ item.maxUses }}</td>
                 <td class="px-3 py-3">{{ item.usedCount }}</td>
                 <td class="px-3 py-3">
@@ -328,6 +400,7 @@ onMounted(() => {
                 <th class="px-3 py-2">角色</th>
                 <th class="px-3 py-2">创建时间</th>
                 <th class="px-3 py-2">最近登录</th>
+                <th class="px-3 py-2 text-right">操作</th>
               </tr>
             </thead>
             <tbody>
@@ -344,6 +417,16 @@ onMounted(() => {
                 </td>
                 <td class="px-3 py-3">{{ formatDateTime(item.createdAt) }}</td>
                 <td class="px-3 py-3">{{ formatDateTime(item.lastLoginAt) }}</td>
+                <td class="px-3 py-3 text-right">
+                  <BaseButton
+                    variant="ghost"
+                    class="text-red-500"
+                    :disabled="deletingUserId === item.id || item.id === currentUser?.id"
+                    @click="handleDeleteUser(item.id)"
+                  >
+                    {{ item.id === currentUser?.id ? '当前用户' : (deletingUserId === item.id ? '删除中...' : '删除') }}
+                  </BaseButton>
+                </td>
               </tr>
             </tbody>
           </table>

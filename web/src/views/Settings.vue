@@ -11,17 +11,18 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
+import { useAuthStore } from '@/stores/auth'
 
 const settingStore = useSettingStore()
 const accountStore = useAccountStore()
 const farmStore = useFarmStore()
+const authStore = useAuthStore()
 
 const { settings, loading } = storeToRefs(settingStore)
 const { currentAccountId, accounts } = storeToRefs(accountStore)
 const { seeds } = storeToRefs(farmStore)
 
 const saving = ref(false)
-const passwordSaving = ref(false)
 const offlineSaving = ref(false)
 const offlineTesting = ref(false)
 const qrSaving = ref(false)
@@ -48,6 +49,7 @@ const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
   return acc ? (acc.name || acc.nick || acc.id) : null
 })
+const isAdmin = computed(() => authStore.user?.role === 'admin')
 const allFertilizerLandTypes = ['gold', 'black', 'red', 'normal']
 
 const fertilizerLandTypeOptions = [
@@ -329,12 +331,6 @@ const localQrLogin = ref({
   apiDomain: 'q.qq.com',
 })
 
-const passwordForm = ref({
-  old: '',
-  new: '',
-  confirm: '',
-})
-
 function syncLocalSettings() {
   if (settings.value) {
     localSettings.value = JSON.parse(JSON.stringify({
@@ -612,37 +608,6 @@ async function saveAccountSettings() {
   }
   finally {
     saving.value = false
-  }
-}
-
-async function handleChangePassword() {
-  if (!passwordForm.value.old || !passwordForm.value.new) {
-    showAlert('请填写完整', 'danger')
-    return
-  }
-  if (passwordForm.value.new !== passwordForm.value.confirm) {
-    showAlert('两次密码输入不一致', 'danger')
-    return
-  }
-  if (passwordForm.value.new.length < 4) {
-    showAlert('密码长度至少4位', 'danger')
-    return
-  }
-
-  passwordSaving.value = true
-  try {
-    const res = await settingStore.changeAdminPassword(passwordForm.value.old, passwordForm.value.new)
-
-    if (res.ok) {
-      showAlert('密码修改成功')
-      passwordForm.value = { old: '', new: '', confirm: '' }
-    }
-    else {
-      showAlert(`修改失败: ${res.error || '未知错误'}`, 'danger')
-    }
-  }
-  finally {
-    passwordSaving.value = false
   }
 }
 
@@ -976,56 +941,10 @@ async function handleTestOffline() {
         </div>
       </div>
 
-      <!-- Card 2: System Settings (Password & Offline) -->
+      <!-- Card 2: System Settings (Offline & QR Login) -->
       <div class="card h-full flex flex-col rounded-lg bg-white shadow dark:bg-gray-800">
-        <!-- Password Header -->
-        <div class="border-b bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
-          <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
-            <div class="i-carbon-password" />
-            管理密码
-          </h3>
-        </div>
-
-        <!-- Password Content -->
-        <div class="p-4 space-y-3">
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <BaseInput
-              v-model="passwordForm.old"
-              label="当前密码"
-              type="password"
-              placeholder="当前管理密码"
-            />
-            <BaseInput
-              v-model="passwordForm.new"
-              label="新密码"
-              type="password"
-              placeholder="至少 4 位"
-            />
-            <BaseInput
-              v-model="passwordForm.confirm"
-              label="确认新密码"
-              type="password"
-              placeholder="再次输入新密码"
-            />
-          </div>
-
-          <div class="flex items-center justify-between pt-1">
-            <p class="text-xs text-gray-500">
-              建议修改默认密码 (admin)
-            </p>
-            <BaseButton
-              variant="primary"
-              size="sm"
-              :loading="passwordSaving"
-              @click="handleChangePassword"
-            >
-              修改管理密码
-            </BaseButton>
-          </div>
-        </div>
-
         <!-- QR Login Header -->
-        <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+        <div v-if="isAdmin" class="border-b bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
             <div class="i-carbon-qr-code" />
             二维码登录接口
@@ -1033,7 +952,7 @@ async function handleTestOffline() {
         </div>
 
         <!-- QR Login Content -->
-        <div class="p-4 space-y-3">
+        <div v-if="isAdmin" class="p-4 space-y-3">
           <BaseInput
             v-model="localQrLogin.apiDomain"
             label="二维码接口域名"

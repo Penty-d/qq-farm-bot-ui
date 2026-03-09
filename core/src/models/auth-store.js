@@ -220,6 +220,37 @@ function updateUserPassword(userId, passwordHash) {
     return sanitizeUser(target);
 }
 
+function updateUserRole(userId, role) {
+    const id = Number.parseInt(userId, 10);
+    if (!Number.isFinite(id) || id <= 0)
+        throw new Error('用户不存在');
+
+    const data = loadUsersData();
+    const target = data.users.find(user => user.id === id);
+    if (!target)
+        throw new Error('用户不存在');
+
+    target.role = normalizeRole(role);
+    target.updatedAt = now();
+    saveUsersData(data);
+    return sanitizeUser(target);
+}
+
+function deleteUser(userId) {
+    const id = Number.parseInt(userId, 10);
+    if (!Number.isFinite(id) || id <= 0)
+        throw new Error('用户不存在');
+
+    const data = loadUsersData();
+    const beforeLength = data.users.length;
+    data.users = data.users.filter(user => user.id !== id);
+    if (data.users.length === beforeLength)
+        throw new Error('用户不存在');
+
+    saveUsersData(data);
+    return true;
+}
+
 function markUserLogin(userId) {
     const id = Number.parseInt(userId, 10);
     if (!Number.isFinite(id) || id <= 0)
@@ -324,6 +355,8 @@ module.exports = {
     findUserById,
     createUser,
     updateUserPassword,
+    updateUserRole,
+    deleteUser,
     markUserLogin,
     createInvite,
     listInvites,

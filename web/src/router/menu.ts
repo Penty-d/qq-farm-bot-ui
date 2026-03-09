@@ -15,11 +15,11 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Dashboard.vue'),
   },
   {
-    path: 'access-control',
-    name: 'accessControl',
-    label: '权限',
-    icon: 'i-carbon-user-role',
-    component: () => import('@/views/AccessControl.vue'),
+    path: 'personal',
+    name: 'personal',
+    label: '个人',
+    icon: 'i-carbon-user-avatar',
+    component: () => import('@/views/Personal.vue'),
   },
   {
     path: 'friends',
@@ -41,6 +41,13 @@ export const menuRoutes: MenuItem[] = [
     label: '账号',
     icon: 'i-carbon-user-settings',
     component: () => import('@/views/Accounts.vue'),
+  },
+  {
+    path: 'access-control',
+    name: 'accessControl',
+    label: '权限',
+    icon: 'i-carbon-user-role',
+    component: () => import('@/views/AccessControl.vue'),
   },
   {
     path: 'settings',

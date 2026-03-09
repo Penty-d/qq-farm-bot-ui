@@ -66,7 +66,9 @@ export const useAccountStore = defineStore('account', () => {
   )
 
   const errorAccounts = computed(() =>
-    accounts.value.filter((account: Account) => account.visibleStatus === 'error'),
+    accounts.value.filter((account: Account) =>
+      account.visibleStatus === 'error' || account.visibleStatus === 'stopped',
+    ),
   )
 
   async function fetchAccounts() {
@@ -75,10 +77,17 @@ export const useAccountStore = defineStore('account', () => {
       const res = await api.get('/api/accounts')
       if (res.data.ok && res.data.data && res.data.data.accounts) {
         accounts.value = Array.isArray(res.data.data.accounts) ? res.data.data.accounts : []
+
+        const total = accounts.value.length
+        const running = accounts.value.filter((account: Account) => account.visibleStatus === 'running').length
+        const error = accounts.value.filter((account: Account) =>
+          account.visibleStatus === 'error' || account.visibleStatus === 'stopped',
+        ).length
+
         stats.value = {
-          total: Number(res.data.data?.stats?.total) || accounts.value.length,
-          running: Number(res.data.data?.stats?.running) || 0,
-          error: Number(res.data.data?.stats?.error) || 0,
+          total,
+          running,
+          error,
         }
 
         if (accounts.value.length > 0) {

@@ -162,10 +162,7 @@ function switchMode(nextMode: 'login' | 'register') {
       </form>
 
       <div class="text-xs text-gray-400 leading-6 dark:text-gray-500">
-        <template v-if="mode === 'login'">
-          管理员默认账号通常为 <span class="font-mono text-gray-600 dark:text-gray-300">admin</span>。
-        </template>
-        <template v-else>
+        <template v-if="mode === 'register'">
           普通用户必须使用管理员生成的邀请码完成注册，邀请码达到使用次数后会自动失效。
         </template>
       </div>

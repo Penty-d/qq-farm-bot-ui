@@ -1,14 +1,13 @@
 import axios from 'axios'
 import NProgress from 'nprogress'
-import { createPinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { pinia } from '@/stores'
 import { menuRoutes } from './menu'
 import 'nprogress/nprogress.css'
 
 NProgress.configure({ showSpinner: false })
 
-const pinia = createPinia()
 let validatedToken = ''
 let validatingPromise: Promise<boolean> | null = null
 
@@ -41,7 +40,7 @@ async function ensureTokenValid() {
   return validatingPromise
 }
 
-const router = createRouter({
+export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {

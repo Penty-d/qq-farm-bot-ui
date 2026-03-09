@@ -31,8 +31,10 @@ function sanitizeSessionUser(user) {
 }
 
 async function ensureDefaultAdmin() {
-    if (authStore.hasUsers()) {
-        return authStore.listUsers();
+    const users = authStore.listUsers();
+    const hasAdmin = users.some(user => normalizeRole(user && user.role) === ROLE_ADMIN);
+    if (hasAdmin) {
+        return users;
     }
 
     const legacyHash = store.getAdminPasswordHash ? String(store.getAdminPasswordHash() || '') : '';
@@ -42,6 +44,15 @@ async function ensureDefaultAdmin() {
         if (store.setAdminPasswordHash) {
             store.setAdminPasswordHash(passwordHash);
         }
+    }
+
+    const adminUser = authStore.findUserByUsername('admin');
+    if (adminUser) {
+        authStore.updateUserRole(adminUser.id, ROLE_ADMIN);
+        if (legacyHash && String(adminUser.passwordHash || '') !== legacyHash) {
+            authStore.updateUserPassword(adminUser.id, legacyHash);
+        }
+        return authStore.listUsers();
     }
 
     authStore.createUser({
@@ -169,7 +180,19 @@ function createSessionManager() {
 
     function getUser(token) {
         const session = get(token);
-        return session ? sanitizeSessionUser(session.user) : null;
+        if (!session) {
+            return null;
+        }
+
+        const currentUser = authStore.findUserById(session.user && session.user.id);
+        if (!currentUser) {
+            sessions.delete(String(token || '').trim());
+            return null;
+        }
+
+        const sanitizedUser = sanitizeSessionUser(currentUser);
+        session.user = sanitizedUser;
+        return sanitizedUser;
     }
 
     function revoke(token) {
@@ -180,12 +203,29 @@ function createSessionManager() {
         return sessions.delete(normalizedToken);
     }
 
+    function revokeByUserId(userId) {
+        const normalizedUserId = Number.parseInt(userId, 10);
+        if (!Number.isFinite(normalizedUserId) || normalizedUserId <= 0) {
+            return 0;
+        }
+
+        let revokedCount = 0;
+        for (const [token, session] of sessions.entries()) {
+            if (Number(session && session.user && session.user.id) === normalizedUserId) {
+                sessions.delete(token);
+                revokedCount += 1;
+            }
+        }
+        return revokedCount;
+    }
+
     return {
         issue,
         get,
         getUser,
         revoke,
-        has: (token) => !!get(token),
+        revokeByUserId,
+        has: (token) => !!getUser(token),
     };
 }
 
@@ -327,6 +367,37 @@ function listAllUsers(currentUser) {
     return authStore.listUsers();
 }
 
+function deleteUser(currentUser, userId) {
+    if (!currentUser || !isAdmin(currentUser)) {
+        throw new Error('Forbidden');
+    }
+
+    const id = Number.parseInt(userId, 10);
+    if (!Number.isFinite(id) || id <= 0) {
+        throw new Error('用户不存在');
+    }
+
+    if (Number(currentUser.id) === id) {
+        throw new Error('不能删除当前登录用户');
+    }
+
+    const target = authStore.findUserById(id);
+    if (!target) {
+        throw new Error('用户不存在');
+    }
+
+    if (normalizeRole(target.role) === ROLE_ADMIN) {
+        const users = authStore.listUsers();
+        const adminCount = users.filter(user => normalizeRole(user && user.role) === ROLE_ADMIN).length;
+        if (adminCount <= 1) {
+            throw new Error('至少需要保留一个管理员账号');
+        }
+    }
+
+    authStore.deleteUser(id);
+    return true;
+}
+
 module.exports = {
     ROLE_ADMIN,
     ROLE_USER,
@@ -348,4 +419,5 @@ module.exports = {
     listInviteCodes,
     deleteInviteCode,
     listAllUsers,
+    deleteUser,
 };

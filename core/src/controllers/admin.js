@@ -40,6 +40,7 @@ const {
     listInviteCodes,
     deleteInviteCode,
     listAllUsers,
+    deleteUser,
 } = require('../services/user-auth');
 const adminLogger = createModuleLogger('admin');
 
@@ -175,6 +176,51 @@ function startAdminServer(dataProvider) {
             return res.json({ ok: true, data: { users } });
         } catch (error) {
             return res.status(403).json({ ok: false, error: error.message });
+        }
+    });
+
+    app.delete('/api/admin/users/:id', (req, res) => {
+        try {
+            const targetUserId = Number.parseInt(req.params.id, 10);
+            const ownedAccounts = store.listAccountsByOwner
+                ? store.listAccountsByOwner(targetUserId)
+                : [];
+
+            for (const account of ownedAccounts) {
+                const accountId = String(account && account.id || '');
+                if (!accountId) continue;
+                provider.stopAccount(accountId);
+                deleteAccount(accountId);
+                if (provider.addAccountLog) {
+                    provider.addAccountLog(
+                        'delete',
+                        `删除账号: ${(account && account.name) || accountId}`,
+                        accountId,
+                        account ? account.name : '',
+                    );
+                }
+            }
+
+            const deleted = deleteUser(req.currentUser, req.params.id);
+
+            if (sessions.revokeByUserId) {
+                sessions.revokeByUserId(targetUserId);
+            }
+
+            return res.json({
+                ok: true,
+                data: {
+                    deleted,
+                    removedAccounts: ownedAccounts.map(account => String(account && account.id || '')).filter(Boolean),
+                },
+            });
+        } catch (error) {
+            const statusCode = error.message === 'Forbidden'
+                ? 403
+                : error.message === '用户不存在'
+                    ? 404
+                    : 400;
+            return res.status(statusCode).json({ ok: false, error: error.message });
         }
     });
 

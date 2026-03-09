@@ -4,6 +4,8 @@ import { ref, watch } from 'vue'
 import api from '@/api'
 
 const theme_key = useStorage('ui_theme', 'dark')
+const tokenRef = useStorage('admin_token', '')
+const accountIdRef = useStorage('current_account_id', '')
 
 export const useAppStore = defineStore('app', () => {
   const sidebarOpen = ref(false)
@@ -22,6 +24,9 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function fetchTheme() {
+    if (!String(tokenRef.value || '').trim() || !String(accountIdRef.value || '').trim())
+      return
+
     try {
       const res = await api.get('/api/settings')
       if (res.data.ok && res.data.data.ui) {
@@ -31,7 +36,7 @@ export const useAppStore = defineStore('app', () => {
       }
     }
     catch {
-      // 未登录时静默失败，使用本地缓存值
+      // 初始化阶段无账号或接口暂不可用时静默失败，使用本地缓存值
     }
   }
 

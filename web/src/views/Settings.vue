@@ -140,9 +140,7 @@ interface AnalyticsCropMeta {
 }
 
 const analyticsCropMetas = ref<AnalyticsCropMeta[]>([])
-const stealBlacklistSearch = ref('')
 const stealBlacklistCollapsed = ref(true)
-const onlyShowUnselectedStealCrops = ref(false)
 
 function parsePositiveInt(input: unknown): number | null {
   const value = Number.parseInt(String(input ?? ''), 10)

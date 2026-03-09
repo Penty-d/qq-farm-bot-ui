@@ -307,6 +307,17 @@ function startAdminServer(dataProvider) {
     });
 
     // API: 好友农田详情
+    app.get('/api/interact-records', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const data = await provider.getInteractRecords(id);
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     app.get('/api/friend/:gid/lands', async (req, res) => {
         const id = getAccId(req);
         if (!id) return res.status(400).json({ ok: false });
@@ -512,12 +523,14 @@ function startAdminServer(dataProvider) {
             const token = String(cfg.token || '').trim();
             const titleBase = String(cfg.title || '账号下线提醒').trim();
             const msgBase = String(cfg.msg || '账号下线').trim();
+            const custom_headers = String(cfg.custom_headers || '').trim();
+            const custom_body = String(cfg.custom_body || '').trim();
 
             if (!channel) {
                 return res.status(400).json({ ok: false, error: '推送渠道不能为空' });
             }
-            if (channel === 'webhook' && !endpoint) {
-                return res.status(400).json({ ok: false, error: 'Webhook 渠道需要填写接口地址' });
+            if ((channel === 'webhook' || channel === 'custom_request') && !endpoint) {
+                return res.status(400).json({ ok: false, error: '接口地址不能为空' });
             }
 
             const now = new Date();
@@ -528,6 +541,8 @@ function startAdminServer(dataProvider) {
                 token,
                 title: `${titleBase}（测试）`,
                 content: `${msgBase}\n\n这是一条下线提醒测试消息。\n时间: ${ts}`,
+                custom_headers,
+                custom_body,
             });
 
             if (!ret || !ret.ok) {
@@ -553,7 +568,7 @@ function startAdminServer(dataProvider) {
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
-               : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 9999999999 };
+                : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 1, offlineDeleteEnabled: false, custom_headers: '', custom_body: '' };
             const qrLogin = store.getQrLoginConfig
                 ? store.getQrLoginConfig()
                 : { apiDomain: 'q.qq.com' };

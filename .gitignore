@@ -2,6 +2,7 @@
 node_modules/
 **/node_modules/
 .pnpm-store/
+.claude/
 
 # Lockfiles (pnpm workspace keeps pnpm-lock.yaml)
 package-lock.json

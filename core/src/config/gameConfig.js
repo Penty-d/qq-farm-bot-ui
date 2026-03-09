@@ -250,6 +250,7 @@ function getPlantByFruitId(fruitId) {
  */
 function getAllSeeds() {
     return Array.from(seedToPlant.values()).map(p => ({
+        plantId: Number(p.id) || 0,
         seedId: p.seed_id,
         name: p.name,
         requiredLevel: Number(p.land_level_need) || 0,

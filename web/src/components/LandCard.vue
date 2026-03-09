@@ -75,6 +75,13 @@ function getLandTypeName(level: number) {
   }
   return typeMap[Number(level) || 0] || ''
 }
+
+function getPlantSizeText(land: any) {
+  const size = Number(land?.plantSize) || 1
+  if (size <= 1)
+    return ''
+  return `${size}x${size}`
+}
 </script>
 
 <template>
@@ -84,6 +91,12 @@ function getLandTypeName(level: number) {
   >
     <div class="absolute left-1 top-1 text-[10px] text-gray-400 font-mono">
       #{{ land.id }}
+    </div>
+    <div
+      v-if="land.plantSize > 1"
+      class="absolute right-1 top-1 rounded bg-pink-100 px-1 py-0.5 text-[10px] text-pink-700 dark:bg-pink-900/30 dark:text-pink-300"
+    >
+      合种 {{ getPlantSizeText(land) }}
     </div>
 
     <div class="mb-1 mt-4 h-10 w-10 flex items-center justify-center">

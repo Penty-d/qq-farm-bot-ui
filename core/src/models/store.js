@@ -14,11 +14,13 @@ const PUSHOO_CHANNELS = new Set([
     'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
     'pushdeer', 'igot', 'telegram', 'feishu', 'ifttt', 'wecombot',
     'discord', 'wxpusher',
+    'custom_request',
 ]);
 const INTERVAL_MAX_SEC = 86400;
-const DEFAULT_OFFLINE_DELETE_SEC = 9999999999;
+const DEFAULT_OFFLINE_DELETE_SEC = 1;
 const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
 const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
+const DEFAULT_STEAL_PLANT_BLACKLIST = [];
 const DEFAULT_OFFLINE_REMINDER = {
     channel: 'webhook',
     reloginUrlMode: 'none',
@@ -27,26 +29,30 @@ const DEFAULT_OFFLINE_REMINDER = {
     title: '账号下线提醒',
     msg: '账号下线',
     offlineDeleteSec: DEFAULT_OFFLINE_DELETE_SEC,
+    offlineDeleteEnabled: false,
+    custom_headers: '',
+    custom_body: '',
 };
 
 const DEFAULT_QR_LOGIN = {
     apiDomain: 'q.qq.com',
 };
 // ============ 全局配置 ============
-const DEFAULT_ACCOUNT_CONFIG = { // 默认账号配置
-    automation: { // 自动化开关
-        farm: true, // 自动管理农场
-        farm_manage: true,
-        farm_water: true,
-        farm_weed: true,
-        farm_bug: true,
-        farm_push: true,
-        land_upgrade: true,
-        friend: true,
-        friend_help_exp_limit: true,
-        friend_steal: true,
-        friend_help: true,
-        friend_bad: false,
+const DEFAULT_ACCOUNT_CONFIG = {
+    automation: {
+        farm: true,
+        farm_manage: true, // 农场打理总开关（浇水/除草/除虫）
+        farm_water: true, // 自动浇水
+        farm_weed: true, // 自动除草
+        farm_bug: true, // 自动除虫
+        farm_push: true,   // 收到 LandsNotify 推送时是否立即触发巡田
+        land_upgrade: true, // 是否自动升级土地
+        friend: true,       // 好友互动总开关
+        friend_help_exp_limit: true, // 帮忙经验达上限后自动停止帮忙
+        friend_steal: true, // 偷菜
+        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST], // 偷菜作物黑名单（按作物ID）
+        friend_help: true,  // 帮忙
+        friend_bad: false,  // 捣乱(放虫草)
         task: true,
         email: true,
         fertilizer_gift: false,
@@ -84,7 +90,11 @@ const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.autom
 
 let accountFallbackConfig = {
     ...DEFAULT_ACCOUNT_CONFIG,
-    automation: { ...DEFAULT_ACCOUNT_CONFIG.automation, fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES] },// 肥料种植类型 
+    automation: {
+        ...DEFAULT_ACCOUNT_CONFIG.automation,
+        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
+        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST],
+    },
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
 };
@@ -134,6 +144,15 @@ function normalizeOfflineReminder(input) {
     const msg = (src.msg !== undefined && src.msg !== null)
         ? String(src.msg).trim()
         : DEFAULT_OFFLINE_REMINDER.msg;
+    const offlineDeleteEnabled = src.offlineDeleteEnabled !== undefined
+        ? !!src.offlineDeleteEnabled
+        : !!DEFAULT_OFFLINE_REMINDER.offlineDeleteEnabled;
+    const custom_headers = (src.custom_headers !== undefined && src.custom_headers !== null)
+        ? String(src.custom_headers).trim()
+        : DEFAULT_OFFLINE_REMINDER.custom_headers;
+    const custom_body = (src.custom_body !== undefined && src.custom_body !== null)
+        ? String(src.custom_body).trim()
+        : DEFAULT_OFFLINE_REMINDER.custom_body;
     return {
         channel,
         reloginUrlMode,
@@ -142,6 +161,9 @@ function normalizeOfflineReminder(input) {
         title,
         msg,
         offlineDeleteSec,
+        offlineDeleteEnabled,
+        custom_headers,
+        custom_body,
     };
 }
 
@@ -177,6 +199,19 @@ function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_
     }
     return normalized;
 }
+
+function normalizeStealPlantBlacklist(input, fallback = DEFAULT_STEAL_PLANT_BLACKLIST) {
+    const source = Array.isArray(input) ? input : fallback;
+    const normalized = [];
+    for (const item of source) {
+        const value = Number.parseInt(item, 10);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        if (normalized.includes(value)) continue;
+        normalized.push(value);
+    }
+    return normalized;
+}
+
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const srcAutomation = (base && base.automation && typeof base.automation === 'object')
         ? base.automation
@@ -187,7 +222,11 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES); // 归一化肥料种植类型
             continue; // 继续下一个配置项
         }
-        if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];// 如果输入配置项存在，则使用输入配置项
+        if (key === 'friend_steal_blacklist') {
+            automation[key] = normalizeStealPlantBlacklist(srcAutomation[key], DEFAULT_STEAL_PLANT_BLACKLIST);
+            continue;
+        }
+        if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];
     }
 
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
@@ -216,16 +255,18 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
     const src = (input && typeof input === 'object') ? input : {};
     const cfg = cloneAccountConfig(fallback || DEFAULT_ACCOUNT_CONFIG);
 
-    if (src.automation && typeof src.automation === 'object') { // 归一化自动化配置项
-        for (const [k, v] of Object.entries(src.automation)) { // 遍历自动化配置项
-            if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue; // 如果配置项不在允许列表中，则跳过
-            if (k === 'fertilizer') { // 归一化肥料配置项
-                const allowed = ['both', 'normal', 'organic', 'none']; // 允许的肥料配置项
-                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k]; // 如果输入配置项在允许列表中，则使用输入配置项，否则使用默认值
-            } else if (k === 'fertilizer_land_types') { // 归一化肥料种植类型
-                cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]); // 归一化肥料种植类型
-            } else { // 归一化其他自动化配置项
-                cfg.automation[k] = !!v; // 如果输入配置项为真值，则使用真值，否则使用默认值
+    if (src.automation && typeof src.automation === 'object') {
+        for (const [k, v] of Object.entries(src.automation)) {
+            if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue;
+            if (k === 'fertilizer') {
+                const allowed = ['both', 'normal', 'organic', 'none'];
+                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
+            } else if (k === 'fertilizer_land_types') {
+                cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]);
+            } else if (k === 'friend_steal_blacklist') {
+                cfg.automation[k] = normalizeStealPlantBlacklist(v, cfg.automation[k]);
+            } else {
+                cfg.automation[k] = !!v;
             }
         }
     }
@@ -402,9 +443,10 @@ function setAdminPasswordHash(hash) {
 loadGlobalConfig();
 
 function getAutomation(accountId) {
-    const automation = { ...getAccountConfigSnapshot(accountId).automation }; // 合并默认自动化配置项
-    automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types); // 归一化肥料种植类型
-    return automation; // 返回自动化配置项
+    const automation = { ...getAccountConfigSnapshot(accountId).automation };
+    automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
+    automation.friend_steal_blacklist = normalizeStealPlantBlacklist(automation.friend_steal_blacklist);
+    return automation;
 }
 
 function getConfigSnapshot(accountId) {
@@ -435,10 +477,12 @@ function applyConfigSnapshot(snapshot, options = {}) {
             if (next.automation[k] === undefined) continue;
             if (k === 'fertilizer') {
                 const allowed = ['both', 'normal', 'organic', 'none'];
-                next.automation[k] = allowed.includes(v) ? v : next.automation[k]; // 验证肥料类型是否合法
-            } else if (k === 'fertilizer_land_types') { // 验证肥料种植类型是否合法
-                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]); // 归一化肥料种植类型
-            } else { // 其他配置项直接转换为布尔值
+                next.automation[k] = allowed.includes(v) ? v : next.automation[k];
+            } else if (k === 'fertilizer_land_types') {
+                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]);
+            } else if (k === 'friend_steal_blacklist') {
+                next.automation[k] = normalizeStealPlantBlacklist(v, next.automation[k]);
+            } else {
                 next.automation[k] = !!v;
             }
         }

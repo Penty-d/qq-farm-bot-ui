@@ -89,7 +89,7 @@ const events = [
   { label: '土地解锁', value: 'unlock_land' },
   { label: '好友巡查', value: 'friend_cycle' },
   { label: '访问好友', value: 'visit_friend' },
-  { label: '加黑名单', value: '加黑名单' },
+  { label: '加黑名单', value: 'add_blacklist' },
 ]
 
 const eventLabelMap: Record<string, string> = Object.fromEntries(

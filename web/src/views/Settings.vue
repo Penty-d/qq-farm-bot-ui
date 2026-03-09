@@ -7,6 +7,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
+import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
@@ -70,6 +71,20 @@ function normalizeFertilizerLandTypes(input: unknown) {
   return normalized
 }
 
+function normalizeStealPlantBlacklist(input: unknown) {
+  const source = Array.isArray(input) ? input : []
+  const normalized: number[] = []
+  for (const item of source) {
+    const value = Number.parseInt(String(item), 10)
+    if (!Number.isFinite(value) || value <= 0)
+      continue
+    if (normalized.includes(value))
+      continue
+    normalized.push(value)
+  }
+  return normalized
+}
+
 const localSettings = ref({
   plantingStrategy: 'preferred',
   preferredSeedId: 0,
@@ -88,6 +103,7 @@ const localSettings = ref({
     farm_push: false,
     land_upgrade: false,
     friend_steal: false,
+    friend_steal_blacklist: [] as number[],
     friend_help: false,
     friend_bad: false,
     friend_help_exp_limit: false,
@@ -109,6 +125,56 @@ const localSettings = ref({
 const friendDisabled = computed(() => !localSettings.value.automation.friend)
 const farmDisabled = computed(() => !localSettings.value.automation.farm_manage)
 
+interface StealCropOption {
+  plantId: number
+  name: string
+  level: number | null
+  image: string
+}
+
+const stealCropOptions = computed<StealCropOption[]>(() => {
+  const source = Array.isArray(seeds.value) ? seeds.value : []
+  const byPlantId = new Map<number, StealCropOption>()
+
+  for (const seed of source) {
+    const plantId = Number.parseInt(String(seed?.plantId ?? ''), 10)
+    if (!Number.isFinite(plantId) || plantId <= 0)
+      continue
+
+    const requiredLevel = Number(seed?.requiredLevel)
+    const level = Number.isFinite(requiredLevel) && requiredLevel >= 0 ? requiredLevel : null
+    const next: StealCropOption = {
+      plantId,
+      name: String(seed?.name || (`作物#${plantId}`)),
+      level,
+      image: String(seed?.image || seed?.seedImage || '').trim(),
+    }
+
+    const current = byPlantId.get(plantId)
+    if (!current) {
+      byPlantId.set(plantId, next)
+      continue
+    }
+
+    if (!current.image && next.image)
+      current.image = next.image
+    if (current.level === null && next.level !== null)
+      current.level = next.level
+    if (!current.name && next.name)
+      current.name = next.name
+  }
+
+  return Array.from(byPlantId.values()).sort((a, b) => {
+    const aLevel = a.level === null ? Number.POSITIVE_INFINITY : a.level
+    const bLevel = b.level === null ? Number.POSITIVE_INFINITY : b.level
+    if (aLevel !== bLevel)
+      return aLevel - bLevel
+    return a.plantId - b.plantId
+  })
+})
+
+const stealBlacklistCount = computed(() => normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist).length)
+
 const localOffline = ref({
   channel: 'webhook',
   reloginUrlMode: 'none',
@@ -116,7 +182,10 @@ const localOffline = ref({
   token: '',
   title: '',
   msg: '',
-  offlineDeleteSec: 9999999999,// 9999999999 表示不删除
+  offlineDeleteSec: 1,
+  offlineDeleteEnabled: false,
+  custom_headers: '',
+  custom_body: '',
 })
 
 const localQrLogin = ref({
@@ -154,6 +223,7 @@ function syncLocalSettings() {
         farm_push: false,
         land_upgrade: false,
         friend_steal: false,
+        friend_steal_blacklist: [] as number[],
         friend_help: false,
         friend_bad: false,
         friend_help_exp_limit: false,
@@ -185,6 +255,7 @@ function syncLocalSettings() {
         farm_push: false,
         land_upgrade: false,
         friend_steal: false,
+        friend_steal_blacklist: [] as number[],
         friend_help: false,
         friend_bad: false,
         friend_help_exp_limit: false,
@@ -206,12 +277,19 @@ function syncLocalSettings() {
         ...localSettings.value.automation,
       }
     }
-      localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
-    
+
+    localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
+    localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
+
     // Sync offline settings (global)
     if (settings.value.offlineReminder) {
-      localOffline.value = JSON.parse(JSON.stringify(settings.value.offlineReminder))
+      localOffline.value = {
+        ...localOffline.value,
+        ...JSON.parse(JSON.stringify(settings.value.offlineReminder)),
+      }
     }
+    localOffline.value.offlineDeleteSec = Math.max(1, Number.parseInt(String(localOffline.value.offlineDeleteSec), 10) || 1)
+    localOffline.value.offlineDeleteEnabled = !!localOffline.value.offlineDeleteEnabled
     if (settings.value.qrLogin) {
       localQrLogin.value = JSON.parse(JSON.stringify(settings.value.qrLogin))
     }
@@ -253,6 +331,7 @@ const plantingStrategyOptions = [
 
 const channelOptions = [
   { label: 'Webhook(自定义接口)', value: 'webhook' },
+  { label: '自定义 JSON (Webhook)', value: 'custom_request' },
   { label: 'Qmsg 酱', value: 'qmsg' },
   { label: 'Server 酱', value: 'serverchan' },
   { label: 'Push Plus', value: 'pushplus' },
@@ -275,6 +354,7 @@ const channelOptions = [
 
 const CHANNEL_DOCS: Record<string, string> = {
   webhook: '',
+  custom_request: '',
   qmsg: 'https://qmsg.zendee.cn/',
   serverchan: 'https://sct.ftqq.com/',
   pushplus: 'https://www.pushplus.plus/',
@@ -379,6 +459,10 @@ watchEffect(async () => {
 async function saveAccountSettings() {
   if (!currentAccountId.value)
     return
+
+  localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
+  localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
+
   saving.value = true
   try {
     const res = await settingStore.saveSettings(currentAccountId.value, localSettings.value)
@@ -441,6 +525,9 @@ async function handleSaveQrLogin() {
   }
 }
 async function handleSaveOffline() {
+  localOffline.value.offlineDeleteSec = Math.max(1, Number.parseInt(String(localOffline.value.offlineDeleteSec), 10) || 1)
+  localOffline.value.offlineDeleteEnabled = !!localOffline.value.offlineDeleteEnabled
+
   offlineSaving.value = true
   try {
     const res = await settingStore.saveOfflineConfig(localOffline.value)
@@ -621,10 +708,57 @@ async function handleTestOffline() {
             <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" :disabled="friendDisabled" />
             <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" :disabled="friendDisabled" />
           </div>
+          <!-- Steal Crop Blacklist + Fertilizer -->
+          <div class="space-y-3">
+            <div class="border border-blue-200 rounded bg-blue-50/60 p-3 dark:border-blue-800/60 dark:bg-blue-900/10">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-sm text-blue-800 font-medium dark:text-blue-300">
+                  偷菜黑名单
+                </div>
+                <div class="text-xs text-blue-700/80 dark:text-blue-300/80">
+                  已选 {{ stealBlacklistCount }} 项
+                </div>
+              </div>
 
-          <!-- Fertilizer -->// 肥料
-           <div class="space-y-3">
-            <div class="rounded border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">
+              <div v-if="stealCropOptions.length > 0" class="grid grid-cols-1 max-h-56 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+                <label
+                  v-for="crop in stealCropOptions"
+                  :key="crop.plantId"
+                  class="flex cursor-pointer items-center gap-2 rounded bg-white px-2 py-1.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  <input
+                    v-model="localSettings.automation.friend_steal_blacklist"
+                    :value="crop.plantId"
+                    type="checkbox"
+                    class="h-3.5 w-3.5"
+                  >
+                  <img
+                    v-if="crop.image"
+                    :src="crop.image"
+                    :alt="crop.name"
+                    class="h-5 w-5 rounded object-cover"
+                  >
+                  <div v-else class="h-5 w-5 flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                    <div class="i-carbon-image" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-xs">{{ crop.name }}</div>
+                    <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                      {{ crop.level === null ? 'Lv.?' : (`Lv.${crop.level}`) }} (#{{ crop.plantId }})
+                    </div>
+                  </div>
+                </label>
+              </div>
+              <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                暂无可选作物，请先等待种子列表加载完成。
+              </div>
+
+              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                好友巡查自动偷菜时，命中黑名单作物将自动跳过。
+              </p>
+            </div>
+
+            <div class="border border-amber-200 rounded bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">
               <div class="mb-2 text-sm text-amber-800 font-medium dark:text-amber-300">
                 施肥范围
               </div>
@@ -826,7 +960,7 @@ async function handleTestOffline() {
             v-model="localOffline.endpoint"
             label="接口地址"
             type="text"
-            :disabled="localOffline.channel !== 'webhook'"
+            :disabled="localOffline.channel !== 'webhook' && localOffline.channel !== 'custom_request'"
           />
 
           <BaseInput
@@ -843,13 +977,19 @@ async function handleTestOffline() {
               type="text"
               placeholder="提醒标题"
             />
-            <BaseInput
-              v-model.number="localOffline.offlineDeleteSec"
-              label="离线删除账号 (秒)"
-              type="number"
-              min="1"
-              placeholder="默认 9999999999 表示不删除"
-            />
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+              <BaseInput
+                v-model.number="localOffline.offlineDeleteSec"
+                label="离线删除账号 (秒)"
+                type="number"
+                min="1"
+                placeholder="默认 1"
+              />
+              <BaseSwitch
+                v-model="localOffline.offlineDeleteEnabled"
+                label="启用离线删号"
+              />
+            </div>
           </div>
 
           <BaseInput
@@ -858,6 +998,19 @@ async function handleTestOffline() {
             type="text"
             placeholder="提醒内容"
           />
+
+          <template v-if="localOffline.channel === 'custom_request'">
+            <BaseTextarea
+              v-model="localOffline.custom_headers"
+              label="Headers (严格 JSON)"
+              placeholder="例如: {&quot;Content-Type&quot;: &quot;application/json&quot;, &quot;Authorization&quot;: &quot;Bearer TOKEN&quot;}"
+            />
+            <BaseTextarea
+              v-model="localOffline.custom_body"
+              label="Body (严格 JSON, 占位符支持 {{title}}（标题） {{content}}（内容）)"
+              placeholder="例如: { &quot;title&quot;: &quot;{{title}}&quot;, &quot;message&quot;: &quot;{{content}}&quot; }"
+            />
+          </template>
         </div>
 
         <!-- Save Offline Button -->

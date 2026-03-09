@@ -16,8 +16,11 @@ function createReloginReminderService(options) {
     const reloginWatchers = new Map(); // key: accountId:loginCode
 
     function getOfflineAutoDeleteMs() {
-        const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null; // 获取离线提醒配置
-        const sec = Math.max(1, Number.parseInt(cfg && cfg.offlineDeleteSec, 10) || 9999999999); // 解析删除时间，默认9999999999秒
+        const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
+        if (!cfg || !cfg.offlineDeleteEnabled) {
+            return Number.POSITIVE_INFINITY;
+        }
+        const sec = Math.max(1, Number.parseInt(cfg.offlineDeleteSec, 10) || 1);
         return sec * 1000;
     }
 
@@ -140,17 +143,22 @@ function createReloginReminderService(options) {
             const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
             if (!cfg) return;
 
-            const channelName = String(cfg.channel || '').trim().toLowerCase();
+            const channel = String(cfg.channel || '').trim().toLowerCase();
             const reloginUrlMode = String(cfg.reloginUrlMode || 'none').trim().toLowerCase();
             const endpoint = String(cfg.endpoint || '').trim();
-            const channel = channelName;
             const token = String(cfg.token || '').trim();
             const baseTitle = String(cfg.title || '').trim();
+            const custom_headers = String(cfg.custom_headers || '').trim();
+            const custom_body = String(cfg.custom_body || '').trim();
+
             const accountName = String(payload.accountName || payload.accountId || '').trim();
             const title = accountName ? `${baseTitle} ${accountName}` : baseTitle;
             let content = String(cfg.msg || '').trim();
-            if (!channel || !token || !title || !content) return;
-            if (channel === 'webhook' && !endpoint) return;
+
+            if (!channel || !title || !content) return;
+            if ((channel === 'webhook' || channel === 'custom_request') && !endpoint) return;
+            if (channel !== 'custom_request' && !token) return;
+
             if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_code' || reloginUrlMode === 'all') {
                 try {
                     const qr = await miniProgramLoginSession.requestLoginCode(getQrLoginOptions());
@@ -195,6 +203,8 @@ function createReloginReminderService(options) {
                 token,
                 title,
                 content,
+                custom_headers,
+                custom_body,
             });
 
             if (ret && ret.ok) {

@@ -480,7 +480,7 @@ async function sellAllFruits() {
         }
         log('仓库', `出售 ${names.join(', ')}${totalGoldEarned > 0 ? `，获得 ${totalGoldEarned} 金币` : ''}`, {
             module: 'warehouse',
-            event: totalGoldEarned > 0 ? 'sell_success' : 'sell_done',
+            event: 'sell_success',
             result: totalGoldEarned > 0 ? 'ok' : 'unknown_gain',
             count: toSell.length,
             gold: totalGoldEarned,

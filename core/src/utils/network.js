@@ -25,6 +25,7 @@ const pendingCallbacks = new Map();
 let wsErrorState = { code: 0, at: 0, message: '' };
 const networkScheduler = createScheduler('network');
 
+
 function rejectAllPendingRequests(reason = '请求被中断') {
     const entries = Array.from(pendingCallbacks.entries());
     pendingCallbacks.clear();
@@ -72,15 +73,16 @@ async function encodeMsg(serviceName, methodName, bodyBytes, clientSeqValue) {
 
     const msg = types.GateMessage.create({
         meta: {
-            service_name: serviceName,
-            method_name: methodName,
+            service_name: serviceName,// 服务名称
+            method_name: methodName,// 方法名称
             message_type: 1,
-            client_seq: toLong(clientSeqValue),
-            server_seq: toLong(serverSeq),
+            client_seq: toLong(clientSeqValue),// 客户端序列号
+            server_seq: toLong(serverSeq),// 服务器序列号
         },
         body: finalBody,
     });
-    const encoded = types.GateMessage.encode(msg).finish();
+    const encoded = types.GateMessage.encode(msg).finish();// 编码消息
+    
     return encoded;
 }
 
@@ -90,11 +92,11 @@ async function sendMsg(serviceName, methodName, bodyBytes, callback) {
         if (callback) callback(new Error('连接未打开'));
         return false;
     }
-    const seq = clientSeq;
-    clientSeq += 1;
+    const seq = clientSeq; // 客户端序列号
+    clientSeq += 1;// 客户端序列号递增
     let encoded;
     try {
-        encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);
+        encoded = await encodeMsg(serviceName, methodName, bodyBytes, seq);// 编码消息
     } catch (err) {
         if (callback) callback(err);
         return false;
@@ -110,17 +112,17 @@ async function sendMsg(serviceName, methodName, bodyBytes, callback) {
         }
         return false;
     }
-
+   
     try {
-        ws.send(encoded);
+        ws.send(encoded);// 发送消息
     } catch (err) {
         if (callback) {
-            pendingCallbacks.delete(seq);
-            callback(err);
+            pendingCallbacks.delete(seq);// 删除待处理回调
+            callback(err);// 调用回调函数
         }
-        return false;
+        return false;// 发送失败
     }
-    return true;
+    return true;// 发送成功
 }
 
 /** Promise 版发送 */
@@ -444,7 +446,7 @@ function startHeartbeat() {
             if (heartbeatMissCount >= 2) {
                 log('心跳', '尝试重连...');
                 // 清理待处理的回调，避免堆积
-                rejectAllPendingRequests('连接超时，已清理');
+                rejectAllPendingRequests('连接超时，已清理');// 拒绝所有待处理请求
             }
         }
 
@@ -492,7 +494,7 @@ function connect(code, onLoginSuccess) {
 
     ws.on('close', (code, _reason) => {
         console.warn(`[WS] 连接关闭 (code=${code})`);
-        cleanup(`连接关闭(code=${code})`);
+        cleanup(`连接关闭(code=${code})`);// 清理连接
         // 自动重连：延迟 5s 后重试，复用已保存的登录回调
         if (savedLoginCallback) {
             networkScheduler.setTimeoutTask('auto_reconnect', 5000, () => {
@@ -517,12 +519,13 @@ function connect(code, onLoginSuccess) {
 }
 
 function cleanup(reason = '网络清理') {
-    rejectAllPendingRequests(`请求已中断: ${reason}`);
-    networkScheduler.clearAll();
+    rejectAllPendingRequests(`请求已中断: ${reason}`);// 拒绝所有待处理请求
+    networkScheduler.clearAll();// 清除所有定时任务
+    
 }
 
 function reconnect(newCode) {
-    cleanup('主动重连');
+    cleanup('主动重连');// 清理连接
     if (ws) {
         ws.removeAllListeners();
         ws.close();

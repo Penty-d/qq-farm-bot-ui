@@ -5,7 +5,7 @@
 const protobuf = require('protobufjs');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
-const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy } = require('../models/store');
+const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getOrganicAntiStealMinutes } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, getServerTimeSec, toTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -13,6 +13,8 @@ const { getPlantRankings } = require('./analytics');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
 const { getFarmOptimizer } = require('./rate-limiter');
+const { getBag } = require('./warehouse');
+const { autoBuyOrganicFertilizer } = require('./mall');
 
 // ============ 内部状态 ============
 let isCheckingFarm = false;
@@ -215,7 +217,7 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
     const fertilizerConfig = automation.fertilizer || 'none';
     const reason = String(options.reason || '').trim().toLowerCase() === 'multi_season' ? 'multi_season' : 'normal';
     const reasonLabel = reason === 'multi_season' ? '多季补肥' : '常规施肥';
-    const eventName = reason === 'multi_season' ? '多季补肥' : 'fertilize';
+    const eventName = reason === 'multi_season' ? '多季补肥' : 'fertilize';// 事件名称
     const selectedLandTypes = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
     const selectedLandTypeNames = formatFertilizerLandTypes(selectedLandTypes);
     const planted = [...new Set((Array.isArray(plantedLands) ? plantedLands : []).map(v => toNum(v)).filter(Boolean))];
@@ -234,8 +236,7 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
     if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both') {
         return { normal: 0, organic: 0 };
     }
-
-    let latestLands = [];
+      let latestLands = [];
     const landTypeById = new Map();
     try {
         const latest = await getAllLands();
@@ -278,14 +279,15 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
     if ((fertilizerConfig === 'normal' || fertilizerConfig === 'both') && normalTargets.length > 0) {
         fertilizedNormal = await fertilize(normalTargets, NORMAL_FERTILIZER_ID);
         if (fertilizedNormal > 0) {
-            log('施肥', `${reasonLabel}：已为 ${fertilizedNormal}/${normalTargets.length} 块地施普通化肥（范围: ${selectedLandTypeNames.join('、')}）`, {
-                module: 'farm',
-                event: eventName,
-                result: 'ok',
-                reason,
-                type: 'normal',
-                count: fertilizedNormal,
-                landTypes: selectedLandTypes,
+           log('施肥', `${reasonLabel}：已为 ${fertilizedNormal}/${normalTargets.length} 块地施普通化肥（范围: ${selectedLandTypeNames.join('、')}）`, 
+           {
+                module: 'farm', // 模块名称
+                event: eventName, // 事件名称
+                result: 'ok',  // 结果为成功
+                reason, // 原因
+                type: 'normal', // 肥料类型为普通
+                count: fertilizedNormal, // 成功施肥数量
+                landTypes: selectedLandTypes, /// 施肥范围
             });
             recordOperation('fertilize', fertilizedNormal);
         }
@@ -293,29 +295,214 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
 
     if (fertilizerConfig === 'organic' || fertilizerConfig === 'both') {
         let organicTargets = planted;
-        if (latestLands.length > 0) {
+       if (latestLands.length > 0) { // 从最新地块数据中获取有机肥料目标
             organicTargets = getOrganicFertilizerTargetsFromLands(latestLands);
         }
-        if (landTypeById.size > 0) {
+        if (landTypeById.size > 0) {  // 从土地类型映射中筛选有机肥料目标
             organicTargets = filterLandIdsByTypes(organicTargets, landTypeById, selectedLandTypes);
         }
 
         fertilizedOrganic = await fertilizeOrganicLoop(organicTargets);
         if (fertilizedOrganic > 0) {
             log('施肥', `${reasonLabel}：有机化肥循环施肥完成，共施 ${fertilizedOrganic} 次（范围: ${selectedLandTypeNames.join('、')}）`, {
-                module: 'farm',
-                event: eventName,
-                result: 'ok',
-                reason,
-                type: 'organic',
-                count: fertilizedOrganic,
-                landTypes: selectedLandTypes,
+                module: 'farm', // 模块名称
+                event: eventName, // 事件名称
+                result: 'ok',  // 结果为成功
+                reason, // 原因
+                type: 'organic', // 肥料类型为有机
+                count: fertilizedOrganic, // 成功施肥数量
+                landTypes: selectedLandTypes, /// 施肥范围
             });
             recordOperation('fertilize', fertilizedOrganic);
         }
     }
 
     return { normal: fertilizedNormal, organic: fertilizedOrganic };
+}
+
+/**
+ * 有机肥防偷功能
+ * 当作物即将成熟时，使用有机肥催熟并立即收获，防止被好友偷菜
+ * @returns {Promise<{fertilized: number, harvested: number}>} 施肥和收获的数量
+ */
+async function runOrganicAntiSteal() {
+    const organicAntiStealEnabled = isAutomationOn('organicAntiSteal');
+    if (!organicAntiStealEnabled) {
+        return { fertilized: 0, harvested: 0 };
+    }
+
+    const thresholdMinutes = getOrganicAntiStealMinutes();
+    const ANTI_STEAL_THRESHOLD_SEC = thresholdMinutes * 60;
+    const nowSec = getServerTimeSec();
+    let fertilizedCount = 0;
+    let harvestedCount = 0;
+
+    let latestLands;
+    try {
+        latestLands = await getAllLands();
+    } catch (e) {
+        logWarn('有机肥防偷', `获取地块数据失败: ${e.message}`);
+        return { fertilized: 0, harvested: 0 };
+    }
+
+    if (!latestLands || !latestLands.lands) {
+        return { fertilized: 0, harvested: 0 };
+    }
+
+    const lands = latestLands.lands;
+    const antiStealTargets = [];
+
+    for (const land of lands) {
+        if (!land || !land.unlocked) continue;
+        const landId = toNum(land.id);
+        if (!landId) continue;
+
+        const plant = land.plant;
+        if (!plant || !plant.phases || plant.phases.length === 0) {
+            continue;
+        }
+
+        const plantId = toNum(plant.id);
+        const plantName = getPlantName(plantId) || plant.name || '未知作物';
+
+        const currentPhase = getCurrentPhase(plant.phases);
+        if (!currentPhase) continue;
+        if (currentPhase.phase === PlantPhase.DEAD) continue;
+        if (currentPhase.phase === PlantPhase.MATURE) continue;
+
+        if (Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+            const leftTimes = toNum(plant.left_inorc_fert_times);
+            if (leftTimes <= 0) continue;
+        }
+
+        const maturePhase = plant.phases.find((p) => p && toNum(p.phase) === PlantPhase.MATURE);
+        if (!maturePhase) continue;
+
+        const matureBegin = toTimeSec(maturePhase.begin_time);
+        const matureInSec = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
+
+        if (matureInSec > 0 && matureInSec <= ANTI_STEAL_THRESHOLD_SEC) {
+            const matureInMin = Math.ceil(matureInSec / 60);
+            antiStealTargets.push({ landId, plantName, matureInSec, matureInMin });
+        }
+    }
+
+    if (antiStealTargets.length === 0) {
+        return { fertilized: 0, harvested: 0 };
+    }
+
+    const targetsSummary = antiStealTargets.map(t => `#${t.landId}(${t.matureInMin}分钟)`).join(', ');
+    log('有机肥防偷', `发现 ${antiStealTargets.length} 块地需要防偷: ${targetsSummary}`, {
+        module: 'farm',
+        event: '有机肥防偷_发现目标',
+        count: antiStealTargets.length,
+        targets: targetsSummary,
+    });
+
+    try {
+        const bag = await getBag();
+        const items = bag && bag.items ? bag.items : [];
+        let organicFertCount = 0;
+        for (const item of items) {
+            if (toNum(item.id) === ORGANIC_FERTILIZER_ID) {
+                organicFertCount = toNum(item.count);
+                break;
+            }
+        }
+
+        if (organicFertCount < antiStealTargets.length) {
+            log('有机肥防偷', `有机化肥库存不足 (${organicFertCount}/${antiStealTargets.length})，尝试自动购买...`, {
+                module: 'farm',
+                event: '有机肥防偷_自动购买',
+                current: organicFertCount,
+                needed: antiStealTargets.length,
+            });
+            const bought = await autoBuyOrganicFertilizer(true);
+            if (bought > 0) {
+                organicFertCount += bought;
+                log('有机肥防偷', `自动购买成功，新增有机化肥 x${bought}，当前库存 ${organicFertCount}`, {
+                    module: 'farm',
+                    event: '有机肥防偷_购买成功',
+                    bought,
+                    total: organicFertCount,
+                });
+            } else {
+                logWarn('有机肥防偷', '自动购买失败（可能点券不足），将使用现有库存继续防偷');
+            }
+        }
+    } catch (e) {
+        logWarn('有机肥防偷', `检查有机肥库存失败: ${e.message}`);
+    }
+
+    log('有机肥防偷', '开始施有机肥...', {
+        module: 'farm',
+        event: '有机肥防偷_开始施肥',
+        count: antiStealTargets.length,
+    });
+
+    const fertilizedLandIds = [];
+    const fertilizedLands = [];
+
+    for (const target of antiStealTargets) {
+        try {
+            const body = types.FertilizeRequest.encode(types.FertilizeRequest.create({
+                land_ids: [toLong(target.landId)],
+                fertilizer_id: toLong(ORGANIC_FERTILIZER_ID),
+            })).finish();
+            await sendMsgAsync('gamepb.plantpb.PlantService', 'Fertilize', body);
+            fertilizedCount++;
+            fertilizedLandIds.push(target.landId);
+            fertilizedLands.push(`#${target.landId}(${target.plantName})`);
+        } catch (e) {
+            if (e.message && e.message.includes('1000019')) {
+                logWarn('有机肥防偷', '有机化肥不足，无法继续防偷');
+            } else {
+                logWarn('有机肥防偷', `地块 #${target.landId} 施肥失败: ${e.message}`);
+            }
+            break;
+        }
+        if (antiStealTargets.length > 1) await sleep(50);
+    }
+
+    if (fertilizedCount === 0) {
+        return { fertilized: 0, harvested: 0 };
+    }
+
+    const fertilizedSummary = fertilizedLands.join(', ');
+    log('有机肥防偷', `施肥完成，成功 ${fertilizedCount}/${antiStealTargets.length} 块: ${fertilizedSummary}，等待服务器更新...`, {
+        module: 'farm',
+        event: '有机肥防偷_施肥完成',
+        count: fertilizedCount,
+        lands: fertilizedSummary,
+    });
+    recordOperation('fertilize', fertilizedCount);
+
+    await sleep(50);// 等待服务器更新
+
+    log('有机肥防偷', '开始收获施肥成功的地块...', {
+        module: 'farm',
+        event: '有机肥防偷_开始收获',
+    });
+
+    try {
+        await harvest(fertilizedLandIds);
+        harvestedCount = fertilizedCount;
+
+        const details = fertilizedLands.join(', ');
+        log('有机肥防偷', `收获完成！共收获 ${harvestedCount} 块地: ${details}`, {
+            module: 'farm',
+            event: '有机肥防偷_收获成功',
+            count: harvestedCount,
+            lands: fertilizedLandIds,
+        });
+
+        recordOperation('antiSteal', harvestedCount);
+        recordOperation('harvest', harvestedCount);
+    } catch (e) {
+        logWarn('有机肥防偷', `收获失败: ${e.message}`);
+    }
+
+    return { fertilized: fertilizedCount, harvested: harvestedCount };
 }
 
 async function removePlant(landIds) {
@@ -579,9 +766,9 @@ async function getLandsDetail() {
                     landsLevel,
                     landSize,
                     couldUnlock,
-                    couldUpgrade,
-                    currentSeason: 0,
-                    totalSeason: 0,
+                    couldUpgrade, // 是否可升级
+                    currentSeason: 0, // 当前季节
+                    totalSeason: 0, // 总季节
                 });
                 continue;
             }
@@ -589,20 +776,20 @@ async function getLandsDetail() {
             if (!plant || !plant.phases || plant.phases.length === 0) {
                 lands.push({
                     id,
-                    unlocked: true,
-                    status: 'empty',
-                    plantName: '',
-                    phaseName: '空地',
-                    level,
-                    maxLevel,
-                    landsLevel,
-                    landSize,
-                    couldUnlock,
-                    couldUpgrade,
-                    currentSeason: 0,
-                    totalSeason: 0,
+                    unlocked: true, // 已解锁
+                    status: 'empty', // 状态为空
+                    plantName: '', // 植物名称为空
+                    phaseName: '空地', // 阶段名称为空地
+                    level, // 等级
+                    maxLevel, // 最大等级
+                    landsLevel, // 土地等级
+                    landSize, // 土地大小
+                    couldUnlock, // 是否可解锁
+                    couldUpgrade, // 是否可升级
+                    currentSeason: 0, // 当前季节
+                    totalSeason: 0, // 总季节
                 });
-                continue;
+                continue;// 空土地，直接添加到结果列表
             }
             const currentPhase = getCurrentPhase(plant.phases, false, '');
             if (!currentPhase) {
@@ -617,9 +804,9 @@ async function getLandsDetail() {
                     landsLevel,
                     landSize,
                     couldUnlock,
-                    couldUpgrade,
-                    currentSeason: 0,
-                    totalSeason: 0,
+                    couldUpgrade, // 是否可升级
+                    currentSeason: 0, // 当前季节
+                    totalSeason: 0, // 总季节
                 });
                 continue;
             }
@@ -628,11 +815,11 @@ async function getLandsDetail() {
             const plantName = getPlantName(plantId) || plant.name || '未知';
             const plantCfg = getPlantById(plantId);
             const seedId = toNum(plantCfg && plantCfg.seed_id);
-            const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
-            const totalSeason = Math.max(1, toNum(plantCfg && plantCfg.seasons) || 1);
-            const currentSeasonRaw = toNum(plant.season);
-            const currentSeason = currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeason) : 1;
-            const phaseName = PHASE_NAMES[phaseVal] || '';
+            const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';// 种子图片
+            const totalSeason = Math.max(1, toNum(plantCfg && plantCfg.seasons) || 1);// 总季节 
+            const currentSeasonRaw = toNum(plant.season); // 当前季节原始值
+            const currentSeason = currentSeasonRaw > 0 ? Math.min(currentSeasonRaw, totalSeason) : 1; // 当前季节，确保不超过总季节
+            const phaseName = PHASE_NAMES[phaseVal] || ''; // 阶段名称
             const maturePhase = Array.isArray(plant.phases)
                 ? plant.phases.find((p) => p && toNum(p.phase) === PlantPhase.MATURE)
                 : null;
@@ -656,8 +843,6 @@ async function getLandsDetail() {
                 seedId,
                 seedImage,
                 phaseName,
-                currentSeason,
-                totalSeason,
                 matureInSec,
                 needWater,
                 needWeed,
@@ -1034,7 +1219,8 @@ async function runFarmOperation(opType, options = {}) {
     const lands = landsReply.lands;
     const status = analyzeLands(lands);
 
-    // 摘要
+    await runOrganicAntiSteal();
+
     const statusParts = [];
     if (status.harvestable.length) statusParts.push(`收:${status.harvestable.length}`);
     if (status.needWeed.length) statusParts.push(`草:${status.needWeed.length}`);
@@ -1102,10 +1288,10 @@ async function runFarmOperation(opType, options = {}) {
     }
 
     // 执行收获
-    let harvestedLandIds = [];
-    let harvestReply = null;
-    let postHarvest = null;
-    if (opType === 'all' || opType === 'harvest') {
+    let harvestedLandIds = [];// 收获的土地ID列表
+    let harvestReply = null;// 收获回复
+    let postHarvest = null;// 收获后处理
+    if (opType === 'all' || opType === 'harvest') {// 所有操作或收获操作
         if (status.harvestable.length > 0) {
             try {
                 harvestReply = await harvest(status.harvestable);
@@ -1140,7 +1326,7 @@ async function runFarmOperation(opType, options = {}) {
         let allDeadLands = [...new Set(status.dead)];
 
         if (opType === 'all' && harvestedLandIds.length > 0) {
-            postHarvest = await resolveRemovableHarvestedLands(harvestedLandIds, harvestReply);
+            postHarvest = await resolveRemovableHarvestedLands(harvestedLandIds, harvestReply);// 处理可移除的土地
             allDeadLands = [...new Set([...allDeadLands, ...postHarvest.removable])];
         }
         // 注意：如果是单纯点"一键种植"，harvestedLandIds 为空，只种当前的空地/死地
@@ -1153,28 +1339,35 @@ async function runFarmOperation(opType, options = {}) {
             } catch (e) { logWarn('种植', e.message); }
         }
     }
-
-    if (opType === 'all' && postHarvest && Array.isArray(postHarvest.growing) && postHarvest.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
+     if (opType === 'all' && postHarvest && Array.isArray(postHarvest.growing) && postHarvest.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
         const multiSeasonTargets = [...new Set(postHarvest.growing.map(v => toNum(v)).filter(Boolean))];
         if (multiSeasonTargets.length > 0) {
+            
             try {
                 await runFertilizerByConfig(multiSeasonTargets, { reason: 'multi_season' });
             } catch (e) {
                 logWarn('施肥', `多季补肥执行失败: ${e.message}`, {
                     module: 'farm',
-                    event: '多季补肥',
+                    event: '多季补肥',// 事件名称
                     result: 'error',
                 });
             }
         }
     }
-    // 执行土地解锁/升级（手动 upgrade 总是执行；自动 all 受开关控制）
+    // ==================== 土地解锁/升级逻辑 ====================
+    // 判断是否需要执行土地升级操作
+    // - 手动操作 (opType === 'upgrade')：总是执行
+    // - 自动巡查 (opType === 'all')：受 land_upgrade 开关控制
     const shouldAutoUpgrade = opType === 'all' && isAutomationOn('land_upgrade');
     if (shouldAutoUpgrade || opType === 'upgrade') {
+        // ---------- 解锁土地 ----------
+        // 检查是否有可解锁的土地
         if (status.unlockable.length > 0) {
             let unlocked = 0;
+            // 逐个解锁土地
             for (const landId of status.unlockable) {
                 try {
+                    // 调用解锁接口，false 表示不使用共享解锁
                     await unlockLand(landId, false);
                     log('解锁', `土地#${landId} 解锁成功`, {
                         module: 'farm', event: 'unlock_land', result: 'ok', landId
@@ -1185,18 +1378,25 @@ async function runFarmOperation(opType, options = {}) {
                         module: 'farm', event: 'unlock_land', result: 'error', landId
                     });
                 }
+                // 每次操作间隔 200ms，避免请求过快
                 await sleep(200);
             }
+            // 记录解锁成功的数量到操作列表
             if (unlocked > 0) {
                 actions.push(`解锁${unlocked}`);
             }
         }
 
+        // ---------- 升级土地 ----------
+        // 检查是否有可升级的土地
         if (status.upgradable.length > 0) {
             let upgraded = 0;
+            // 逐个升级土地
             for (const landId of status.upgradable) {
                 try {
+                    // 调用升级接口
                     const reply = await upgradeLand(landId);
+                    // 获取升级后的新等级
                     const newLevel = reply.land ? toNum(reply.land.level) : '?';
                     log('升级', `土地#${landId} 升级成功 → 等级${newLevel}`, {
                         module: 'farm', event: 'upgrade_land', result: 'ok', landId, level: newLevel
@@ -1207,8 +1407,10 @@ async function runFarmOperation(opType, options = {}) {
                         module: 'farm', event: 'upgrade_land', result: 'error', landId
                     });
                 }
+                // 每次操作间隔 200ms，避免请求过快
                 await sleep(200);
             }
+            // 记录升级成功的数量到操作列表和统计
             if (upgraded > 0) {
                 actions.push(`升级${upgraded}`);
                 recordOperation('upgrade', upgraded);
@@ -1216,63 +1418,114 @@ async function runFarmOperation(opType, options = {}) {
         }
     }
 
-    // 日志
+    // ==================== 日志输出 ====================
+    // 格式化操作结果字符串，例如: " → 收获3/种植5/解锁1"
     const actionStr = actions.length > 0 ? ` → ${actions.join('/')}` : '';
+    // 只有执行了操作才输出日志
     if (actions.length > 0) {
          log('农场', `[${statusParts.join(' ')}]${actionStr}`, {
              module: 'farm', event: 'farm_cycle', opType, actions
          });
     }
+    // 返回是否有工作执行和操作列表
     return { hadWork: actions.length > 0, actions };
 }
 
+/**
+ * 调度下一次农场检查
+ * 使用定时器在指定延迟后执行下一次农场检查
+ * @param {number} delayMs - 延迟时间（毫秒），默认使用配置的检查间隔
+ */
 function scheduleNextFarmCheck(delayMs = CONFIG.farmCheckInterval) {
+    // 如果使用外部调度器，不执行内部调度
     if (externalSchedulerMode) return;
+    // 如果农场检查循环未运行，不调度
     if (!farmLoopRunning) return;
+    // 设置定时任务，延迟后执行农场检查
     farmScheduler.setTimeoutTask('farm_check_loop', Math.max(0, delayMs), async () => {
+        // 再次检查循环是否仍在运行
         if (!farmLoopRunning) return;
+        // 执行农场检查
         await checkFarm();
+        // 检查完成后，调度下一次检查
         if (!farmLoopRunning) return;
         scheduleNextFarmCheck(CONFIG.farmCheckInterval);
     });
 }
 
+/**
+ * 启动农场检查循环
+ * 开始定期检查农场状态并执行自动化操作
+ * @param {object} options - 配置选项
+ * @param {boolean} options.externalScheduler - 是否使用外部调度器
+ */
 function startFarmCheckLoop(options = {}) {
+    // 如果循环已经在运行，直接返回
     if (farmLoopRunning) return;
+    // 设置是否使用外部调度器模式
     externalSchedulerMode = !!options.externalScheduler;
+    // 标记循环为运行状态
     farmLoopRunning = true;
+    // 监听土地变化推送事件
     networkEvents.on('landsChanged', onLandsChangedPush);
+    // 如果不是外部调度模式，启动内部定时检查
     if (!externalSchedulerMode) {
+        // 2秒后开始第一次检查
         scheduleNextFarmCheck(2000);
     }
 }
 
+/**
+ * 处理土地变化推送事件
+ * 当服务器推送土地状态变化时，触发农场检查
+ * @param {Array} lands - 变化的土地列表
+ */
 let lastPushTime = 0;
 function onLandsChangedPush(lands) {
+    // 检查推送触发巡田开关是否开启
     if (!isAutomationOn('farm_push')) {
         return;
     }
+    // 如果正在检查农场，跳过本次推送
     if (isCheckingFarm) return;
+    // 防抖：500ms 内只处理一次推送
     const now = Date.now();
     if (now - lastPushTime < 500) return;
     lastPushTime = now;
+    // 记录推送日志
     log('农场', `收到推送: ${lands.length}块土地变化，检查中...`, {
         module: 'farm', event: 'lands_notify', result: 'trigger_check', count: lands.length
     });
+    // 延迟 100ms 后执行农场检查，避免与正在进行的检查冲突
     farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
         if (!isCheckingFarm) await checkFarm();
     });
 }
 
+/**
+ * 停止农场检查循环
+ * 清理所有定时任务和事件监听
+ */
 function stopFarmCheckLoop() {
+    // 标记循环为停止状态
     farmLoopRunning = false;
+    // 重置外部调度器模式
     externalSchedulerMode = false;
+    // 清理所有定时任务
     farmScheduler.clearAll();
+    // 移除土地变化推送事件监听
     networkEvents.removeListener('landsChanged', onLandsChangedPush);
 }
 
+/**
+ * 刷新农场检查循环
+ * 立即重新调度下一次农场检查
+ * @param {number} delayMs - 延迟时间（毫秒），默认 200ms
+ */
 function refreshFarmCheckLoop(delayMs = 200) {
+    // 如果循环未运行，不执行
     if (!farmLoopRunning) return;
+    // 重新调度下一次检查
     scheduleNextFarmCheck(delayMs);
 }
 
@@ -1284,6 +1537,7 @@ module.exports = {
     getAllLands,
     getLandsDetail,
     getAvailableSeeds,
-    runFarmOperation, // 导出新函数
+    runFarmOperation,
     runFertilizerByConfig,
+    runOrganicAntiSteal,
 };

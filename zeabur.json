@@ -1,0 +1,6 @@
+{
+  "build_command": "pnpm build:web",
+  "start_command": "cd core && node client.js",
+  "install_command": "pnpm install",
+  "node_version": "20"
+}

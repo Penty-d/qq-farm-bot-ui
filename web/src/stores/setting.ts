@@ -14,12 +14,11 @@ export interface AutomationConfig {
   task?: boolean
   sell?: boolean
   fertilizer?: string
-  fertilizer_multi_season?: boolean
-  fertilizer_land_types?: string[]
   friend_steal?: boolean
   friend_help?: boolean
   friend_bad?: boolean
   open_server_gift?: boolean
+  organicAntiSteal?: boolean
 }
 
 export interface IntervalsConfig {
@@ -58,6 +57,7 @@ export interface QrLoginConfig {
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
+  organicAntiStealMinutes: number
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
   automation: AutomationConfig
@@ -70,6 +70,7 @@ export const useSettingStore = defineStore('setting', () => {
   const settings = ref<SettingsState>({
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
+    organicAntiStealMinutes: 5,
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
     automation: {},
@@ -81,7 +82,7 @@ export const useSettingStore = defineStore('setting', () => {
       token: '',
       title: '账号下线提醒',
       msg: '账号下线',
-      offlineDeleteSec: 9999999999,
+      offlineDeleteSec: 120,
     },
     qrLogin: {
       apiDomain: 'q.qq.com',
@@ -101,6 +102,7 @@ export const useSettingStore = defineStore('setting', () => {
         const d = data.data
         settings.value.plantingStrategy = d.strategy || 'preferred'
         settings.value.preferredSeedId = d.preferredSeed || 0
+        settings.value.organicAntiStealMinutes = d.organicAntiStealMinutes || 5
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
         settings.value.automation = d.automation || {}
@@ -112,7 +114,7 @@ export const useSettingStore = defineStore('setting', () => {
           token: '',
           title: '账号下线提醒',
           msg: '账号下线',
-          offlineDeleteSec: 9999999999,
+          offlineDeleteSec: 120,
         }
         settings.value.qrLogin = d.qrLogin || {
           apiDomain: 'q.qq.com',
@@ -133,6 +135,7 @@ export const useSettingStore = defineStore('setting', () => {
       const settingsPayload = {
         plantingStrategy: newSettings.plantingStrategy,
         preferredSeedId: newSettings.preferredSeedId,
+        organicAntiStealMinutes: newSettings.organicAntiStealMinutes,
         intervals: newSettings.intervals,
         friendQuietHours: newSettings.friendQuietHours,
       }

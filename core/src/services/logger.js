@@ -107,6 +107,20 @@ function getRootLogger() {
     const level = String(process.env.LOG_LEVEL || 'info').toLowerCase();
     const { combine, timestamp, errors, json, colorize, printf } = winston.format;
 
+    // 使用本地时区格式化时间
+    const formatLocalTimestamp = (ts) => {
+        const date = new Date(ts);
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).replace(/\//g, '-');
+    };
+
     rootLogger = winston.createLogger({
         level,
         defaultMeta: { app: 'qq-farm-bot' },
@@ -127,18 +141,47 @@ function getRootLogger() {
                         delete meta.module;
                         const safeMeta = sanitizeMeta(meta);
                         const hasMeta = safeMeta && Object.keys(safeMeta).length > 0;
-                        return `${info.timestamp} [${info.level}] ${moduleName}${msg}${hasMeta ? ` ${JSON.stringify(safeMeta)}` : ''}`;
+                        const localTime = formatLocalTimestamp(info.timestamp);
+                        return `${localTime} [${info.level}] ${moduleName}${msg}${hasMeta ? ` ${JSON.stringify(safeMeta)}` : ''}`;
                     }),
                 ),
             }),
             new winston.transports.File({
                 filename: path.join(logDir, 'combined.log'),
-                format: combine(timestamp(), errors({ stack: true }), json()),
+                format: combine(
+                    timestamp(),
+                    errors({ stack: true }),
+                    printf((info) => {
+                        const localTime = formatLocalTimestamp(info.timestamp);
+                        const msg = redactString(info.message || '');
+                        const safeMeta = sanitizeMeta(info);
+                        return JSON.stringify({
+                            timestamp: localTime,
+                            level: info.level,
+                            message: msg,
+                            meta: safeMeta
+                        });
+                    })
+                ),
             }),
             new winston.transports.File({
                 filename: path.join(logDir, 'error.log'),
                 level: 'error',
-                format: combine(timestamp(), errors({ stack: true }), json()),
+                format: combine(
+                    timestamp(),
+                    errors({ stack: true }),
+                    printf((info) => {
+                        const localTime = formatLocalTimestamp(info.timestamp);
+                        const msg = redactString(info.message || '');
+                        const safeMeta = sanitizeMeta(info);
+                        return JSON.stringify({
+                            timestamp: localTime,
+                            level: info.level,
+                            message: msg,
+                            meta: safeMeta
+                        });
+                    })
+                ),
             }),
         ],
     });

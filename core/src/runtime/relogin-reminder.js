@@ -16,8 +16,8 @@ function createReloginReminderService(options) {
     const reloginWatchers = new Map(); // key: accountId:loginCode
 
     function getOfflineAutoDeleteMs() {
-        const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
-        const sec = Math.max(1, Number.parseInt(cfg && cfg.offlineDeleteSec, 10) || 9999999999);
+        const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null; // 获取离线提醒配置
+        const sec = Math.max(1, Number.parseInt(cfg && cfg.offlineDeleteSec, 10) || 9999999999); // 解析删除时间，默认9999999999秒
         return sec * 1000;
     }
 
@@ -219,3 +219,4 @@ function createReloginReminderService(options) {
 module.exports = {
     createReloginReminderService,
 };
+

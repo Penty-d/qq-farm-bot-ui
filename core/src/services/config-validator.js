@@ -68,18 +68,19 @@ const AUTOMATION_SCHEMA = {
         vip_gift: { type: 'boolean', default: true },
         month_card: { type: 'boolean', default: true },
         open_server_gift: { type: 'boolean', default: true },
-        sell: { type: 'boolean', default: false },
-        fertilizer_multi_season: { type: 'boolean', default: false },
-        fertilizer_land_types: {
-            type: 'array',
-            default: ['gold', 'black', 'red', 'normal'],
-            items: { type: 'string', oneOf: ['gold', 'black', 'red', 'normal'] },
+         sell: { type: 'boolean', default: false }, // 出售土地
+        fertilizer_multi_season: { type: 'boolean', default: false }, // 多季肥料
+        fertilizer_land_types: { // 肥料种植类型
+            type: 'array', // 数组类型
+            default: ['gold', 'black', 'red', 'normal'], // 默认值为所有种植类型
+            items: { type: 'string', oneOf: ['gold', 'black', 'red', 'normal'] }, // 每个元素必须是这四个值之一
         },
-        fertilizer: { 
-            type: 'string', 
-            oneOf: ['none', 'normal', 'organic', 'both'],
-            default: 'none',
+        fertilizer: {  // 肥料类型
+            type: 'string',  // 字符串类型
+            oneOf: ['none', 'normal', 'organic', 'both'], // 只能是这四个值之一
+            default: 'none', // 默认值为none
         },
+        organicAntiSteal: { type: 'boolean', default: false },
     },
     additionalProperties: false,
 };
@@ -129,6 +130,7 @@ const ACCOUNT_CONFIG_SCHEMA = {
             default: 'preferred',
         },
         preferredSeedId: { type: 'number', min: 0, default: 0 },
+        organicAntiStealMinutes: { type: 'number', min: 1, max: 1000, default: 5 },
         friendQuietHours: QUIET_HOURS_SCHEMA,
         friendBlacklist: { type: 'array', items: { type: 'number' }, default: [] },
     },
@@ -156,7 +158,7 @@ const OFFLINE_REMINDER_SCHEMA = {
         token: { type: 'string', maxLength: 200, default: '' },
         title: { type: 'string', maxLength: 100, default: '账号下线提醒' },
         msg: { type: 'string', maxLength: 500, default: '账号下线' },
-        offlineDeleteSec: { type: 'number', min: 1, max: 9999999999, default: 9999999999 },
+        offlineDeleteSec: { type: 'number', min: 1, max: 9999999999, default: 9999999999 },// 离线删除时间，默认9999999999秒
     },
     required: ['channel'],
     additionalProperties: false,

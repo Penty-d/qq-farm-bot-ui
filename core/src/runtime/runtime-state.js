@@ -39,6 +39,7 @@ function createRuntimeState(options) {
             automation: store.getAutomation(accountId),
             plantingStrategy: store.getPlantingStrategy(accountId),
             preferredSeedId: store.getPreferredSeed(accountId),
+            organicAntiStealMinutes: store.getOrganicAntiStealMinutes(accountId),
             intervals: store.getIntervals(accountId),
             friendQuietHours: store.getFriendQuietHours(accountId),
             friendBlacklist: store.getFriendBlacklist(accountId),

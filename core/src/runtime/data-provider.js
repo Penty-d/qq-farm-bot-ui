@@ -127,6 +127,8 @@ function createDataProvider(options) {
             const snapshot = {
                 plantingStrategy,
                 preferredSeedId,
+                organicAntiStealMinutes: body.organicAntiStealMinutes,
+                automation: body.automation,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
             };
@@ -136,6 +138,7 @@ function createDataProvider(options) {
             return {
                 strategy: store.getPlantingStrategy(accountId),
                 preferredSeed: store.getPreferredSeed(accountId),
+                organicAntiStealMinutes: store.getOrganicAntiStealMinutes(accountId),
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
                 configRevision: rev,

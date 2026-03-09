@@ -313,6 +313,7 @@ const OP_META: Record<string, { label: string, icon: string, color: string }> = 
   helpBug: { label: '帮除虫', icon: 'i-carbon-warning-alt', color: 'text-red-300' },
   taskClaim: { label: '任务', icon: 'i-carbon-task-complete', color: 'text-indigo-500' },
   sell: { label: '出售', icon: 'i-carbon-shopping-cart', color: 'text-pink-500' },
+  antiSteal: { label: '防偷', icon: 'i-carbon-shield-checkmark', color: 'text-rose-500' },
 }
 
 function getOpName(key: string | number) {

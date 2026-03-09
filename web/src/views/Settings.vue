@@ -47,16 +47,16 @@ const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
   return acc ? (acc.name || acc.nick || acc.id) : null
 })
-const allFertilizerLandTypes = ['gold', 'black', 'red', 'normal']
+const allFertilizerLandTypes = ['gold', 'black', 'red', 'normal']// 多季施肥土地类型
 
-const fertilizerLandTypeOptions = [
+const _fertilizerLandTypeOptions = [
   { label: '金土地', value: 'gold' },
   { label: '黑土地', value: 'black' },
   { label: '红土地', value: 'red' },
   { label: '普通土地', value: 'normal' },
 ]
 
-function normalizeFertilizerLandTypes(input: unknown) {
+function _normalizeFertilizerLandTypes(input: unknown) {
   const source = Array.isArray(input) ? input : allFertilizerLandTypes
   const normalized: string[] = []
   for (const item of source) {
@@ -73,6 +73,7 @@ function normalizeFertilizerLandTypes(input: unknown) {
 const localSettings = ref({
   plantingStrategy: 'preferred',
   preferredSeedId: 0,
+  organicAntiStealMinutes: 5,
   intervals: { farmMin: 2, farmMax: 2, friendMin: 10, friendMax: 10 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
   automation: {
@@ -99,8 +100,7 @@ const localSettings = ref({
     month_card: false,
     open_server_gift: false,
     fertilizer: 'none',
-    fertilizer_multi_season: false,
-    fertilizer_land_types: [...allFertilizerLandTypes],
+    organicAntiSteal: false,
   },
 })
 
@@ -114,7 +114,7 @@ const localOffline = ref({
   token: '',
   title: '',
   msg: '',
-  offlineDeleteSec: 9999999999,
+  offlineDeleteSec: 120,
 })
 
 const localQrLogin = ref({
@@ -132,6 +132,7 @@ function syncLocalSettings() {
     localSettings.value = JSON.parse(JSON.stringify({
       plantingStrategy: settings.value.plantingStrategy,
       preferredSeedId: settings.value.preferredSeedId,
+      organicAntiStealMinutes: settings.value.organicAntiStealMinutes || 5,
       intervals: settings.value.intervals,
       friendQuietHours: settings.value.friendQuietHours,
       automation: settings.value.automation,
@@ -163,8 +164,7 @@ function syncLocalSettings() {
         month_card: false,
         open_server_gift: false,
         fertilizer: 'none',
-        fertilizer_multi_season: false,
-        fertilizer_land_types: [...allFertilizerLandTypes],
+        organicAntiSteal: false,
       }
     }
     else {
@@ -193,16 +193,13 @@ function syncLocalSettings() {
         month_card: false,
         open_server_gift: false,
         fertilizer: 'none',
-        fertilizer_multi_season: false,
-        fertilizer_land_types: [...allFertilizerLandTypes],
+        organicAntiSteal: false,
       }
       localSettings.value.automation = {
         ...defaults,
         ...localSettings.value.automation,
       }
     }
-
-    localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
 
     // Sync offline settings (global)
     if (settings.value.offlineReminder) {
@@ -617,43 +614,33 @@ async function handleTestOffline() {
             <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" :disabled="friendDisabled" />
             <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" :disabled="friendDisabled" />
           </div>
+
           <!-- Fertilizer -->
           <div class="space-y-3">
-            <div class="border border-amber-200 rounded bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">
-              <div class="mb-2 text-sm text-amber-800 font-medium dark:text-amber-300">
-                施肥范围
-              </div>
-              <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
-                <label
-                  v-for="option in fertilizerLandTypeOptions"
-                  :key="option.value"
-                  class="flex cursor-pointer items-center gap-1.5 rounded bg-white px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  <input
-                    v-model="localSettings.automation.fertilizer_land_types"
-                    :value="option.value"
-                    type="checkbox"
-                    class="h-3.5 w-3.5"
-                  >
-                  <span>{{ option.label }}</span>
-                </label>
-              </div>
-              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                施肥前会优先按土地类型过滤，仅对命中范围的地块执行施肥策略。
-              </p>
-            </div>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-              <BaseSelect
-                v-model="localSettings.automation.fertilizer"
-                label="施肥策略"
-                class="w-full"
-                :options="fertilizerOptions"
-              />
+            <BaseSelect
+              v-model="localSettings.automation.fertilizer"
+              label="施肥策略"
+              class="w-full md:w-1/2"
+              :options="fertilizerOptions"
+            />
+            <div class="flex flex-wrap items-center gap-4">
               <BaseSwitch
-                v-model="localSettings.automation.fertilizer_multi_season"
-                label="多季补肥"
+                v-model="localSettings.automation.organicAntiSteal"
+                label="有机肥防偷"
+              />
+              <BaseInput
+                v-model.number="localSettings.organicAntiStealMinutes"
+                label="提前分钟数"
+                type="number"
+                min="1"
+                max="1000"
+                class="w-32"
+                :disabled="!localSettings.automation.organicAntiSteal"
               />
             </div>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              开启后，当作物剩余指定分钟成熟时，自动使用有机肥催熟并立即收获，防止被偷。不受施肥策略影响。
+            </p>
           </div>
         </div>
 
@@ -823,7 +810,7 @@ async function handleTestOffline() {
               label="离线删除账号 (秒)"
               type="number"
               min="1"
-              placeholder="默认 9999999999"
+              placeholder="默认 120"
             />
           </div>
 

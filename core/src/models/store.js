@@ -33,20 +33,20 @@ const DEFAULT_QR_LOGIN = {
     apiDomain: 'q.qq.com',
 };
 // ============ 全局配置 ============
-const DEFAULT_ACCOUNT_CONFIG = {
-    automation: {
-        farm: true,
-        farm_manage: true, // 农场打理总开关（浇水/除草/除虫）
-        farm_water: true, // 自动浇水
-        farm_weed: true, // 自动除草
-        farm_bug: true, // 自动除虫
-        farm_push: true,   // 收到 LandsNotify 推送时是否立即触发巡田
-        land_upgrade: true, // 是否自动升级土地
-        friend: true,       // 好友互动总开关
-        friend_help_exp_limit: true, // 帮忙经验达上限后自动停止帮忙
-        friend_steal: true, // 偷菜
-        friend_help: true,  // 帮忙
-        friend_bad: false,  // 捣乱(放虫草)
+const DEFAULT_ACCOUNT_CONFIG = { // 默认账号配置
+    automation: { // 自动化开关
+        farm: true, // 自动管理农场
+        farm_manage: true,
+        farm_water: true,
+        farm_weed: true,
+        farm_bug: true,
+        farm_push: true,
+        land_upgrade: true,
+        friend: true,
+        friend_help_exp_limit: true,
+        friend_steal: true,
+        friend_help: true,
+        friend_bad: false,
         task: true,
         email: true,
         fertilizer_gift: false,
@@ -58,21 +58,23 @@ const DEFAULT_ACCOUNT_CONFIG = {
         open_server_gift: true,
         sell: false,
         fertilizer: 'none',
-        fertilizer_multi_season: false,
-        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
+        fertilizer_multi_season: false, // 多季节肥料
+        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES], // 肥料种植类型
+        organicAntiSteal: false,  // 有机反贼
     },
-    plantingStrategy: 'preferred',
-    preferredSeedId: 0,
-    intervals: {
-        farm: 2,
-        friend: 10,
+    organicAntiStealMinutes: 5, // 有机反贼检测间隔分钟数
+    plantingStrategy: 'preferred', // 种植策略
+    preferredSeedId: 0, // 优选种子 ID
+    intervals: { 
+        farm: 2, 
+        friend: 10, 
         farmMin: 2,
         farmMax: 2,
         friendMin: 10,
         friendMax: 10,
     },
     friendQuietHours: {
-        enabled: false,
+        enabled: false,// 好友静默时间
         start: '23:00',
         end: '07:00',
     },
@@ -82,7 +84,7 @@ const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.autom
 
 let accountFallbackConfig = {
     ...DEFAULT_ACCOUNT_CONFIG,
-    automation: { ...DEFAULT_ACCOUNT_CONFIG.automation, fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES] },
+    automation: { ...DEFAULT_ACCOUNT_CONFIG.automation, fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES] },// 肥料种植类型 
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
 };
@@ -158,14 +160,14 @@ function normalizeApiDomain(input, fallback = DEFAULT_QR_LOGIN.apiDomain) {
 }
 
 
-function normalizeQrLoginConfig(input) {
-    const src = (input && typeof input === 'object') ? input : {};
+function normalizeQrLoginConfig(input) { // 归一化二维码登录配置
+    const src = (input && typeof input === 'object') ? input : {};// 输入为对象则使用，否则使用默认值
     return {
         apiDomain: normalizeApiDomain(src.apiDomain, DEFAULT_QR_LOGIN.apiDomain),
     };
 }
-function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
-    const source = Array.isArray(input) ? input : fallback;
+function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) { // 归一化肥料种植类型
+    const source = Array.isArray(input) ? input : fallback;// 输入为数组则使用，否则使用默认值
     const normalized = [];
     for (const item of source) {
         const value = String(item || '').trim().toLowerCase();
@@ -175,24 +177,24 @@ function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_
     }
     return normalized;
 }
-
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const srcAutomation = (base && base.automation && typeof base.automation === 'object')
         ? base.automation
         : {};
-    const automation = { ...DEFAULT_ACCOUNT_CONFIG.automation };
-    for (const key of Object.keys(automation)) {
-        if (key === 'fertilizer_land_types') {
-            automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES);
-            continue;
+    const automation = { ...DEFAULT_ACCOUNT_CONFIG.automation }; // 合并默认自动化配置项
+   for (const key of Object.keys(automation)) { // 遍历自动化配置项
+        if (key === 'fertilizer_land_types') { // 归一化肥料种植类型
+            automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES); // 归一化肥料种植类型
+            continue; // 继续下一个配置项
         }
-        if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];
+        if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];// 如果输入配置项存在，则使用输入配置项
     }
 
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
     return {
         ...base,
         automation,
+        organicAntiStealMinutes: Math.max(1, Math.min(1000, Number.parseInt(base.organicAntiStealMinutes, 10) || 5)),
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
@@ -214,16 +216,16 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
     const src = (input && typeof input === 'object') ? input : {};
     const cfg = cloneAccountConfig(fallback || DEFAULT_ACCOUNT_CONFIG);
 
-    if (src.automation && typeof src.automation === 'object') {
-        for (const [k, v] of Object.entries(src.automation)) {
-            if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue;
-            if (k === 'fertilizer') {
-                const allowed = ['both', 'normal', 'organic', 'none'];
-                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
-            } else if (k === 'fertilizer_land_types') {
-                cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]);
-            } else {
-                cfg.automation[k] = !!v;
+    if (src.automation && typeof src.automation === 'object') { // 归一化自动化配置项
+        for (const [k, v] of Object.entries(src.automation)) { // 遍历自动化配置项
+            if (!ALLOWED_AUTOMATION_KEYS.has(k)) continue; // 如果配置项不在允许列表中，则跳过
+            if (k === 'fertilizer') { // 归一化肥料配置项
+                const allowed = ['both', 'normal', 'organic', 'none']; // 允许的肥料配置项
+                cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k]; // 如果输入配置项在允许列表中，则使用输入配置项，否则使用默认值
+            } else if (k === 'fertilizer_land_types') { // 归一化肥料种植类型
+                cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]); // 归一化肥料种植类型
+            } else { // 归一化其他自动化配置项
+                cfg.automation[k] = !!v; // 如果输入配置项为真值，则使用真值，否则使用默认值
             }
         }
     }
@@ -234,6 +236,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
+    }
+
+    if (src.organicAntiStealMinutes !== undefined && src.organicAntiStealMinutes !== null) {
+        cfg.organicAntiStealMinutes = Math.max(1, Math.min(1000, Number.parseInt(src.organicAntiStealMinutes, 10) || 5));
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -396,9 +402,9 @@ function setAdminPasswordHash(hash) {
 loadGlobalConfig();
 
 function getAutomation(accountId) {
-    const automation = { ...getAccountConfigSnapshot(accountId).automation };
-    automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
-    return automation;
+    const automation = { ...getAccountConfigSnapshot(accountId).automation }; // 合并默认自动化配置项
+    automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types); // 归一化肥料种植类型
+    return automation; // 返回自动化配置项
 }
 
 function getConfigSnapshot(accountId) {
@@ -407,6 +413,7 @@ function getConfigSnapshot(accountId) {
         automation: { ...cfg.automation },
         plantingStrategy: cfg.plantingStrategy,
         preferredSeedId: cfg.preferredSeedId,
+        organicAntiStealMinutes: cfg.organicAntiStealMinutes,
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         friendBlacklist: [...(cfg.friendBlacklist || [])],
@@ -428,10 +435,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
             if (next.automation[k] === undefined) continue;
             if (k === 'fertilizer') {
                 const allowed = ['both', 'normal', 'organic', 'none'];
-                next.automation[k] = allowed.includes(v) ? v : next.automation[k];
-            } else if (k === 'fertilizer_land_types') {
-                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]);
-            } else {
+                next.automation[k] = allowed.includes(v) ? v : next.automation[k]; // 验证肥料类型是否合法
+            } else if (k === 'fertilizer_land_types') { // 验证肥料种植类型是否合法
+                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]); // 归一化肥料种植类型
+            } else { // 其他配置项直接转换为布尔值
                 next.automation[k] = !!v;
             }
         }
@@ -443,6 +450,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     if (cfg.preferredSeedId !== undefined && cfg.preferredSeedId !== null) {
         next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
+    }
+
+    if (cfg.organicAntiStealMinutes !== undefined && cfg.organicAntiStealMinutes !== null) {
+        next.organicAntiStealMinutes = Math.max(1, Math.min(1000, Number.parseInt(cfg.organicAntiStealMinutes, 10) || 5));
     }
 
     if (cfg.intervals && typeof cfg.intervals === 'object') {
@@ -492,6 +503,10 @@ function getPreferredSeed(accountId) {
 
 function getPlantingStrategy(accountId) {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
+}
+
+function getOrganicAntiStealMinutes(accountId) {
+    return getAccountConfigSnapshot(accountId).organicAntiStealMinutes || 5;
 }
 
 function getIntervals(accountId) {
@@ -661,6 +676,7 @@ module.exports = {
     isAutomationOn,
     getPreferredSeed,
     getPlantingStrategy,
+    getOrganicAntiStealMinutes,
     getIntervals,
     getFriendQuietHours,
     getFriendBlacklist,
@@ -677,3 +693,4 @@ module.exports = {
     getAdminPasswordHash,
     setAdminPasswordHash,
 };
+

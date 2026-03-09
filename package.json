@@ -2,6 +2,7 @@
   "name": "qq-farm-bot-ui",
   "packageManager": "pnpm@10.30.2",
   "scripts": {
+    "start": "node core/client.js",
     "dev:core": "pnpm -C core dev",
     "dev:web": "pnpm -C web dev",
     "dev": "pnpm build:web && pnpm dev:core",

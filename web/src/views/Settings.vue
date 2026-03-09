@@ -314,44 +314,6 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
   })
 })
 const stealBlacklistCount = computed(() => normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist).length)
-
-const stealBlacklistCollapsed = ref(true)
-
-function isCropBlacklisted(plantId: number) {
-  return stealBlacklistSet.value.has(plantId)
-}
-
-function toggleStealBlacklistCrop(plantId: number) {
-  const current = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
-  if (current.includes(plantId)) {
-    localSettings.value.automation.friend_steal_blacklist = current.filter(id => id !== plantId)
-    return
-  }
-  localSettings.value.automation.friend_steal_blacklist = [...current, plantId]
-}
-
-const filteredStealCropOptions = computed(() => {
-  const keyword = stealBlacklistSearch.value.trim().toLowerCase()
-
-  return stealCropOptions.value.filter((crop) => {
-    const byName = crop.name.toLowerCase().includes(keyword)
-    const bySeedId = crop.seedId !== null && String(crop.seedId).includes(keyword)
-    const keywordMatched = !keyword || byName || bySeedId
-    const unselectedMatched = !onlyShowUnselectedStealCrops.value || !isCropBlacklisted(crop.plantId)
-    return keywordMatched && unselectedMatched
-  })
-})
-
-function filterUnselectedStealCrops() {
-  onlyShowUnselectedStealCrops.value = !onlyShowUnselectedStealCrops.value
-  if (onlyShowUnselectedStealCrops.value)
-    stealBlacklistSearch.value = ''
-}
-
-function clearStealFilter() {
-  onlyShowUnselectedStealCrops.value = false
-  stealBlacklistSearch.value = ''
-}
 const localOffline = ref({
   channel: 'webhook',
   reloginUrlMode: 'none',

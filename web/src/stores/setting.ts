@@ -17,7 +17,6 @@ export interface AutomationConfig {
   fertilizer_multi_season?: boolean
   fertilizer_land_types?: string[]
   friend_steal?: boolean
-  friend_steal_blacklist?: number[]
   friend_help?: boolean
   friend_bad?: boolean
   open_server_gift?: boolean

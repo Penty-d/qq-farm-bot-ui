@@ -20,7 +20,6 @@ const INTERVAL_MAX_SEC = 86400;
 const DEFAULT_OFFLINE_DELETE_SEC = 1;
 const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
 const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
-const DEFAULT_STEAL_PLANT_BLACKLIST = [];
 const DEFAULT_OFFLINE_REMINDER = {
     channel: 'webhook',
     reloginUrlMode: 'none',
@@ -50,7 +49,6 @@ const DEFAULT_ACCOUNT_CONFIG = {
         friend: true,       // 好友互动总开关
         friend_help_exp_limit: true, // 帮忙经验达上限后自动停止帮忙
         friend_steal: true, // 偷菜
-        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST], // 偷菜作物黑名单（按作物ID）
         friend_help: true,  // 帮忙
         friend_bad: false,  // 捣乱(放虫草)
         task: true,
@@ -92,7 +90,6 @@ let accountFallbackConfig = {
     automation: {
         ...DEFAULT_ACCOUNT_CONFIG.automation,
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
-        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST],
     },
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
@@ -200,18 +197,6 @@ function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_
     return normalized;
 }
 
-function normalizeStealPlantBlacklist(input, fallback = DEFAULT_STEAL_PLANT_BLACKLIST) {
-    const source = Array.isArray(input) ? input : fallback;
-    const normalized = [];
-    for (const item of source) {
-        const value = Number.parseInt(item, 10);
-        if (!Number.isFinite(value) || value <= 0) continue;
-        if (normalized.includes(value)) continue;
-        normalized.push(value);
-    }
-    return normalized;
-}
-
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const srcAutomation = (base && base.automation && typeof base.automation === 'object')
         ? base.automation
@@ -220,10 +205,6 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     for (const key of Object.keys(automation)) {
         if (key === 'fertilizer_land_types') {
             automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES);
-            continue;
-        }
-        if (key === 'friend_steal_blacklist') {
-            automation[key] = normalizeStealPlantBlacklist(srcAutomation[key], DEFAULT_STEAL_PLANT_BLACKLIST);
             continue;
         }
         if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];
@@ -264,8 +245,6 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
                 cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
             } else if (k === 'fertilizer_land_types') {
                 cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]);
-            } else if (k === 'friend_steal_blacklist') {
-                cfg.automation[k] = normalizeStealPlantBlacklist(v, cfg.automation[k]);
             } else {
                 cfg.automation[k] = !!v;
             }
@@ -446,7 +425,6 @@ loadGlobalConfig();
 function getAutomation(accountId) {
     const automation = { ...getAccountConfigSnapshot(accountId).automation };
     automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
-    automation.friend_steal_blacklist = normalizeStealPlantBlacklist(automation.friend_steal_blacklist);
     return automation;
 }
 
@@ -481,8 +459,6 @@ function applyConfigSnapshot(snapshot, options = {}) {
                 next.automation[k] = allowed.includes(v) ? v : next.automation[k];
             } else if (k === 'fertilizer_land_types') {
                 next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]);
-            } else if (k === 'friend_steal_blacklist') {
-                next.automation[k] = normalizeStealPlantBlacklist(v, next.automation[k]);
             } else {
                 next.automation[k] = !!v;
             }

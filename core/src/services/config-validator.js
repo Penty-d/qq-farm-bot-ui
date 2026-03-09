@@ -56,7 +56,6 @@ const AUTOMATION_SCHEMA = {
         land_upgrade: { type: 'boolean', default: true },
         friend: { type: 'boolean', default: true },
         friend_steal: { type: 'boolean', default: true },
-        friend_steal_blacklist: { type: 'array', items: { type: 'number', min: 1 }, default: [] },
         friend_help: { type: 'boolean', default: true },
         friend_bad: { type: 'boolean', default: false },
         friend_help_exp_limit: { type: 'boolean', default: true },

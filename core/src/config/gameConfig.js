@@ -260,7 +260,20 @@ function getAllSeeds() {
 }
 
 function getSeedImageBySeedId(seedId) {
-    return seedImageMap.get(Number(seedId) || 0) || '';
+    const id = Number(seedId) || 0;
+    if (id <= 0) return '';
+
+    const direct = seedImageMap.get(id);
+    if (direct) return direct;
+
+    const item = itemInfoMap.get(id);
+    const assetName = item && item.asset_name ? String(item.asset_name) : '';
+    if (assetName) {
+        const byAsset = seedAssetImageMap.get(assetName);
+        if (byAsset) return byAsset;
+    }
+
+    return '';
 }
 
 function getItemImageById(itemId) {

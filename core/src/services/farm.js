@@ -624,6 +624,12 @@ async function getAvailableSeeds() {
                 const seedId = toNum(goods.item_id);
                 const plantCfg = getPlantBySeedId(seedId);
                 const plantId = toNum(plantCfg && plantCfg.id);
+                const configRequiredLevel = toNum(plantCfg && (plantCfg.land_level_need ?? plantCfg.level_need ?? plantCfg.required_level));
+                if (requiredLevel <= 0 && configRequiredLevel > 0) {
+                    requiredLevel = configRequiredLevel;
+                }
+
+                const seedImage = getSeedImageBySeedId(seedId) || String(goods?.icon || goods?.item_image || '').trim();
 
                 list.push({
                     seedId,
@@ -632,7 +638,7 @@ async function getAvailableSeeds() {
                     name: getPlantNameBySeedId(seedId),
                     price: toNum(goods.price),
                     requiredLevel,
-                    image: getSeedImageBySeedId(seedId),
+                    image: seedImage,
                     locked: !goods.unlocked || state.level < requiredLevel,
                     soldOut: isSoldOut,
                 });

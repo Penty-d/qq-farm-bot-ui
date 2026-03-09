@@ -793,8 +793,6 @@ async function handleTestOffline() {
                 label="多季补肥"
               />
             </div>
-          </div>
-        </div>
             <div class="flex flex-wrap items-center gap-4">
               <BaseSwitch
                 v-model="localSettings.automation.organicAntiSteal"

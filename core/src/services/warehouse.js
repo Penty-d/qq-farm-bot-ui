@@ -513,5 +513,6 @@ module.exports = {
     }),
     sellAllFruits,
     getBagItems,
+    getContainerHoursFromBagItems,
     getCurrentTotalsFromBag,
 };

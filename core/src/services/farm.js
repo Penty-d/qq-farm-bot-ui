@@ -5,7 +5,7 @@
 const protobuf = require('protobufjs');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getPlantBySeedId, getSeedImageBySeedId } = require('../config/gameConfig');
-const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy } = require('../models/store');
+const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getOrganicAntiStealMinutes } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, getServerTimeSec, toTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -13,7 +13,7 @@ const { getPlantRankings } = require('./analytics');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
 const { getFarmOptimizer } = require('./rate-limiter');
-const { getBag } = require('./warehouse');
+const { getBag, getBagItems, getContainerHoursFromBagItems } = require('./warehouse');
 const { autoBuyOrganicFertilizer } = require('./mall');
 
 // ============ 内部状态 ============
@@ -22,6 +22,8 @@ let isFirstFarmCheck = true;
 let farmLoopRunning = false;
 let externalSchedulerMode = false;
 const farmScheduler = createScheduler('farm');
+let lastOrganicAntiStealCheck = 0;// 上次检查有机化肥防偷的时间
+const ANTI_STEAL_CHECK_COOLDOWN_MS = 1 * 1000;// 每1秒检查一次有机化肥防偷
 
 // ============ 农场 API ============
 
@@ -408,6 +410,12 @@ async function runOrganicAntiSteal() {
         return { fertilized: 0, harvested: 0 };
     }
 
+    const now = Date.now();
+    if (now - lastOrganicAntiStealCheck < ANTI_STEAL_CHECK_COOLDOWN_MS) {
+        return { fertilized: 0, harvested: 0 };
+    }
+    lastOrganicAntiStealCheck = now;
+
     const thresholdMinutes = getOrganicAntiStealMinutes();
     const ANTI_STEAL_THRESHOLD_SEC = thresholdMinutes * 60;
     const nowSec = getServerTimeSec();
@@ -468,6 +476,21 @@ async function runOrganicAntiSteal() {
         return { fertilized: 0, harvested: 0 };
     }
 
+    let organicHoursAvailable = 0;
+    try {
+        const bag = await getBag();
+        const bagItems = getBagItems(bag);
+        const containerHours = getContainerHoursFromBagItems(bagItems);
+        organicHoursAvailable = containerHours.organic;
+    } catch (e) {
+        logWarn('有机肥防偷', `检查有机肥库存失败: ${e.message}`);
+        return { fertilized: 0, harvested: 0 };
+    }
+
+    if (organicHoursAvailable < antiStealTargets.length) {
+        return { fertilized: 0, harvested: 0 };
+    }
+
     const targetsSummary = antiStealTargets.map(t => `#${t.landId}(${t.matureInMin}分钟)`).join(', ');
     log('有机肥防偷', `发现 ${antiStealTargets.length} 块地需要防偷: ${targetsSummary}`, {
         module: 'farm',
@@ -475,41 +498,6 @@ async function runOrganicAntiSteal() {
         count: antiStealTargets.length,
         targets: targetsSummary,
     });
-
-    try {
-        const bag = await getBag();
-        const items = bag && bag.items ? bag.items : [];
-        let organicFertCount = 0;
-        for (const item of items) {
-            if (toNum(item.id) === ORGANIC_FERTILIZER_ID) {
-                organicFertCount = toNum(item.count);
-                break;
-            }
-        }
-
-        if (organicFertCount < antiStealTargets.length) {
-            log('有机肥防偷', `有机化肥库存不足 (${organicFertCount}/${antiStealTargets.length})，尝试自动购买...`, {
-                module: 'farm',
-                event: '有机肥防偷_自动购买',
-                current: organicFertCount,
-                needed: antiStealTargets.length,
-            });
-            const bought = await autoBuyOrganicFertilizer(true);
-            if (bought > 0) {
-                organicFertCount += bought;
-                log('有机肥防偷', `自动购买成功，新增有机化肥 x${bought}，当前库存 ${organicFertCount}`, {
-                    module: 'farm',
-                    event: '有机肥防偷_购买成功',
-                    bought,
-                    total: organicFertCount,
-                });
-            } else {
-                logWarn('有机肥防偷', '自动购买失败（可能点券不足），将使用现有库存继续防偷');
-            }
-        }
-    } catch (e) {
-        logWarn('有机肥防偷', `检查有机肥库存失败: ${e.message}`);
-    }
 
     log('有机肥防偷', '开始施有机肥...', {
         module: 'farm',
@@ -554,7 +542,7 @@ async function runOrganicAntiSteal() {
     });
     recordOperation('fertilize', fertilizedCount);
 
-    await sleep(50);// 等待服务器更新
+    await sleep(30);
 
     log('有机肥防偷', '开始收获施肥成功的地块...', {
         module: 'farm',
@@ -576,7 +564,13 @@ async function runOrganicAntiSteal() {
         recordOperation('antiSteal', harvestedCount);
         recordOperation('harvest', harvestedCount);
     } catch (e) {
-        logWarn('有机肥防偷', `收获失败: ${e.message}`);
+        const msg = String(e.message || '');
+        if (msg.includes('1001021') || msg.includes('作物未成熟')) {
+            logWarn('有机肥防偷', `作物尚未成熟，稍后自动重试收获`);
+            lastOrganicAntiStealCheck = 0;// 重置上次检查时间，稍后重试
+        } else {
+            logWarn('有机肥防偷', `收获失败: ${msg}`);
+        }
     }
 
     return { fertilized: fertilizedCount, harvested: harvestedCount };

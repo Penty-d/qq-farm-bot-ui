@@ -825,7 +825,7 @@ async function getLandsDetail() {
 }
 
 async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
-    let landsToPlant = [...emptyLandIds];
+    const landsToPlant = [...emptyLandIds];
     const state = getUserState();
 
     // 1. 铲除枯死/收获残留植物（一键操作）

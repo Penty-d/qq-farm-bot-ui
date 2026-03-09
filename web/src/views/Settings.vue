@@ -172,6 +172,7 @@ const stealCropOptions = computed<StealCropOption[]>(() => {
 })
 
 const stealBlacklistCount = computed(() => normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist).length)
+const stealBlacklistCollapsed = ref(true)
 
 const localOffline = ref({
   channel: 'webhook',
@@ -706,51 +707,63 @@ async function handleTestOffline() {
           <!-- Steal Crop Blacklist + Fertilizer -->
           <div class="space-y-3">
             <div class="border border-blue-200 rounded bg-blue-50/60 p-3 dark:border-blue-800/60 dark:bg-blue-900/10">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-sm text-blue-800 font-medium dark:text-blue-300">
-                  偷菜黑名单
+              <button
+                class="mb-2 w-full flex items-center justify-between gap-2 text-left"
+                type="button"
+                @click="stealBlacklistCollapsed = !stealBlacklistCollapsed"
+              >
+                <div class="flex items-center gap-2">
+                  <div
+                    class="i-carbon-chevron-right text-sm text-blue-700 transition-transform duration-200 dark:text-blue-300"
+                    :class="{ 'rotate-90': !stealBlacklistCollapsed }"
+                  />
+                  <div class="text-sm text-blue-800 font-medium dark:text-blue-300">
+                    偷菜黑名单
+                  </div>
                 </div>
                 <div class="text-xs text-blue-700/80 dark:text-blue-300/80">
                   已选 {{ stealBlacklistCount }} 项
                 </div>
-              </div>
+              </button>
 
-              <div v-if="stealCropOptions.length > 0" class="grid grid-cols-1 max-h-56 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
-                <label
-                  v-for="crop in stealCropOptions"
-                  :key="crop.plantId"
-                  class="flex cursor-pointer items-center gap-2 rounded bg-white px-2 py-1.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                >
-                  <input
-                    v-model="localSettings.automation.friend_steal_blacklist"
-                    :value="crop.plantId"
-                    type="checkbox"
-                    class="h-3.5 w-3.5"
+              <template v-if="!stealBlacklistCollapsed">
+                <div v-if="stealCropOptions.length > 0" class="grid grid-cols-1 max-h-56 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+                  <label
+                    v-for="crop in stealCropOptions"
+                    :key="crop.plantId"
+                    class="flex cursor-pointer items-center gap-2 rounded bg-white px-2 py-1.5 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
-                  <img
-                    v-if="crop.image"
-                    :src="crop.image"
-                    :alt="crop.name"
-                    class="h-5 w-5 rounded object-cover"
-                  >
-                  <div v-else class="h-5 w-5 flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                    <div class="i-carbon-image" />
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate text-xs">{{ crop.name }}</div>
-                    <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                      {{ crop.level === null ? 'Lv.?' : (`Lv.${crop.level}`) }} (#{{ crop.plantId }})
+                    <input
+                      v-model="localSettings.automation.friend_steal_blacklist"
+                      :value="crop.plantId"
+                      type="checkbox"
+                      class="h-3.5 w-3.5"
+                    >
+                    <img
+                      v-if="crop.image"
+                      :src="crop.image"
+                      :alt="crop.name"
+                      class="h-5 w-5 rounded object-cover"
+                    >
+                    <div v-else class="h-5 w-5 flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                      <div class="i-carbon-image" />
                     </div>
-                  </div>
-                </label>
-              </div>
-              <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                暂无可选作物，请先等待种子列表加载完成。
-              </div>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-xs">{{ crop.name }}</div>
+                      <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                        {{ crop.level === null ? 'Lv.?' : (`Lv.${crop.level}`) }} (#{{ crop.plantId }})
+                      </div>
+                    </div>
+                  </label>
+                </div>
+                <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                  暂无可选作物，请先等待种子列表加载完成。
+                </div>
 
-              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                好友巡查自动偷菜时，命中黑名单作物将自动跳过。
-              </p>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  好友巡查自动偷菜时，命中黑名单作物将自动跳过。
+                </p>
+              </template>
             </div>
 
             <div class="border border-amber-200 rounded bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">

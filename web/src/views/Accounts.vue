@@ -10,7 +10,7 @@ import { getPlatformClass, getPlatformLabel, useAccountStore } from '@/stores/ac
 
 const router = useRouter()
 const accountStore = useAccountStore()
-const { accounts, loading, currentAccountId } = storeToRefs(accountStore)
+const { accounts, loading, currentAccountId, stats } = storeToRefs(accountStore)
 
 const showModal = ref(false)
 const showDeleteConfirm = ref(false)
@@ -82,10 +82,23 @@ function selectAccount(account: any) {
 
 <template>
   <div class="mx-auto max-w-6xl w-full p-4">
-    <div class="mb-6 flex items-center justify-between">
-      <h1 class="text-2xl font-bold">
-        账号管理
-      </h1>
+    <div class="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">
+          账号管理
+        </h1>
+        <div class="mt-2 flex flex-wrap gap-2 text-sm">
+          <span class="rounded-full bg-gray-100 px-3 py-1 text-gray-600 dark:bg-gray-700 dark:text-gray-200">
+            账号总数：{{ stats.total }}
+          </span>
+          <span class="rounded-full bg-green-100 px-3 py-1 text-green-700 dark:bg-green-900/20 dark:text-green-300">
+            运行中：{{ stats.running }}
+          </span>
+          <span class="rounded-full bg-red-100 px-3 py-1 text-red-700 dark:bg-red-900/20 dark:text-red-300">
+            异常：{{ stats.error }}
+          </span>
+        </div>
+      </div>
       <BaseButton
         variant="primary"
         @click="openAddModal"
@@ -133,7 +146,13 @@ function selectAccount(account: any) {
               <h3 class="text-lg font-bold">
                 {{ acc.name || acc.nick || acc.id }}
               </h3>
-              <div class="mt-0.5 flex items-center gap-1.5">
+              <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
+                <span
+                  v-if="acc.ownerUsername"
+                  class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                >
+                  {{ acc.belongsToCurrentUser ? '我的账号' : `归属：${acc.ownerUsername}` }}
+                </span>
                 <span
                   v-if="acc.platform"
                   class="rounded px-1 py-0.2 text-[10px] font-medium leading-tight"
@@ -164,8 +183,11 @@ function selectAccount(account: any) {
         <div class="mt-2 flex items-center justify-between border-t border-gray-100 pt-4 dark:border-gray-700">
           <div class="flex items-center gap-2 text-sm text-gray-500">
             <span class="flex items-center gap-1">
-              <div class="h-2 w-2 rounded-full" :class="acc.running ? 'bg-green-500' : 'bg-gray-300'" />
-              {{ acc.running ? '运行中' : '已停止' }}
+              <div
+                class="h-2 w-2 rounded-full"
+                :class="acc.visibleStatus === 'running' ? 'bg-green-500' : acc.visibleStatus === 'error' ? 'bg-red-500' : 'bg-gray-300'"
+              />
+              {{ acc.visibleStatus === 'running' ? '运行中' : acc.visibleStatus === 'error' ? '异常' : '已停止' }}
             </span>
           </div>
 

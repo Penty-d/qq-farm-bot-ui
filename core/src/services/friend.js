@@ -20,6 +20,14 @@ let friendLoopRunning = false;
 let externalSchedulerMode = false;
 let lastResetDate = '';  // 上次重置日期 (YYYY-MM-DD)
 const friendScheduler = createScheduler('friend');
+let idleFriendProbeCursor = 0;
+const idleFriendProbeCooldownUntil = new Map();
+
+const IDLE_FRIEND_PROBE_BATCH_SIZE = 12;
+const IDLE_FRIEND_PROBE_REDUCED_BATCH_SIZE = 6;
+const IDLE_FRIEND_PROBE_SKIP_THRESHOLD = 24;
+const IDLE_FRIEND_PROBE_MISS_COOLDOWN_MS = 20 * 60 * 1000;
+const IDLE_FRIEND_PROBE_HIT_COOLDOWN_MS = 2 * 60 * 1000;
 
 // 操作限制状态 (从服务器响应中更新)
 // 操作类型ID (根据游戏代码):
@@ -126,6 +134,58 @@ function addFriendToBlacklist(friendGid, friendName, reason = '') {
         reason: String(reason || ''),
     });
     return true;
+}
+
+function pruneIdleFriendProbeCooldown(nowMs = Date.now()) {
+    for (const [gid, until] of idleFriendProbeCooldownUntil.entries()) {
+        if (!gid || until <= nowMs) idleFriendProbeCooldownUntil.delete(gid);
+    }
+}
+
+function getIdleFriendProbeBudget(priorityCount) {
+    const count = Math.max(0, Number(priorityCount) || 0);
+    if (count >= IDLE_FRIEND_PROBE_SKIP_THRESHOLD) return 0;
+    if (count >= Math.floor(IDLE_FRIEND_PROBE_SKIP_THRESHOLD / 2)) return IDLE_FRIEND_PROBE_REDUCED_BATCH_SIZE;
+    return IDLE_FRIEND_PROBE_BATCH_SIZE;
+}
+
+function selectIdleFriendProbeCandidates(candidates, budget, nowMs = Date.now()) {
+    const list = Array.isArray(candidates) ? candidates : [];
+    const maxCount = Math.max(0, Number(budget) || 0);
+    if (list.length === 0 || maxCount <= 0) return [];
+
+    pruneIdleFriendProbeCooldown(nowMs);
+
+    const total = list.length;
+    let cursor = idleFriendProbeCursor % total;
+    if (cursor < 0) cursor = 0;
+
+    const selected = [];
+    let scanned = 0;
+    while (scanned < total && selected.length < maxCount) {
+        const friend = list[cursor];
+        if (friend) {
+            const gid = toNum(friend.gid);
+            const cooldownUntil = gid ? (idleFriendProbeCooldownUntil.get(gid) || 0) : 0;
+            if (!gid || cooldownUntil <= nowMs) {
+                selected.push({ ...friend, isProbe: true });
+            }
+        }
+        cursor = (cursor + 1) % total;
+        scanned++;
+    }
+
+    idleFriendProbeCursor = cursor;
+    return selected;
+}
+
+function markIdleFriendProbeCooldown(friendGid, hadAction, nowMs = Date.now()) {
+    const gid = toNum(friendGid);
+    if (!gid) return;
+    idleFriendProbeCooldownUntil.set(
+        gid,
+        nowMs + (hadAction ? IDLE_FRIEND_PROBE_HIT_COOLDOWN_MS : IDLE_FRIEND_PROBE_MISS_COOLDOWN_MS)
+    );
 }
 
 // ============ 好友 API ============
@@ -815,18 +875,18 @@ async function visitFriend(friend, totalActions, myGid, options = {}) {
     } catch (e) {
         if (isEnterFarmBannedError(e)) {
             addFriendToBlacklist(gid, name, e && e.message ? e.message : '');
-            return;
+            return { acted: false, entered: false };
         }
         logWarn('好友', `进入 ${name} 农场失败: ${e.message}`, {
             module: 'friend', event: 'enter_farm', result: 'error', friendName: name, friendGid: gid
         });
-        return;
+        return { acted: false, entered: false };
     }
 
     const lands = enterReply.lands || [];
     if (lands.length === 0) {
         await leaveFriendFarm(gid);
-        return;
+        return { acted: false, entered: true };
     }
 
     const status = analyzeFriendLands(lands, myGid, name, options);
@@ -929,11 +989,12 @@ async function visitFriend(friend, totalActions, myGid, options = {}) {
 
     if (actions.length > 0) {
         log('好友', `${name}: ${actions.join('/')}`, {
-            module: 'friend', event: 'visit_friend', result: 'ok', friendName: name, friendGid: gid, actions
+            module: 'friend', event: 'visit_friend', result: 'ok', friendName: name, friendGid: gid, actions, scanType: friend && friend.isProbe ? 'probe' : 'priority'
         });
     }
 
     await leaveFriendFarm(gid);
+    return { acted: actions.length > 0, entered: true };
 }
 
 // ============ 好友巡查主循环 ============
@@ -944,9 +1005,11 @@ async function checkFriends() {
     if (!isAutomationOn('friend')) return false;
 
     const helpEnabled = !!isAutomationOn('friend_help');
+    const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit');
+    const helpScanEnabled = helpEnabled && (!stopWhenExpLimit || canGetHelpExp);
     const stealEnabled = !!isAutomationOn('friend_steal');
     const badEnabled = !!isAutomationOn('friend_bad');
-    const hasAnyFriendOp = helpEnabled || stealEnabled || badEnabled;
+    const hasAnyFriendOp = helpScanEnabled || stealEnabled || badEnabled;
     if (isCheckingFriends || !state.gid || !hasAnyFriendOp) return false;
     if (inFriendQuietHours()) return false;
     
@@ -966,7 +1029,7 @@ async function checkFriends() {
         const blacklist = new Set(getFriendBlacklist());
 
         const priorityFriends = [];
-        const otherFriends = [];
+        const idleProbeCandidates = [];
         const visitedGids = new Set();
 
         for (const f of friends) {
@@ -983,16 +1046,17 @@ async function checkFriends() {
             const weedNum = p ? toNum(p.weed_num) : 0;
             const insectNum = p ? toNum(p.insect_num) : 0;
             
-            const hasAction = stealNum > 0 || dryNum > 0 || weedNum > 0 || insectNum > 0;
+            const hasStealAction = stealEnabled && stealNum > 0;
+            const hasHelpAction = helpScanEnabled && (dryNum > 0 || weedNum > 0 || insectNum > 0);
 
-            if (hasAction) {
+            if (hasStealAction || hasHelpAction) {
                 priorityFriends.push({ 
                     gid, name, isPriority: true,
                     stealNum, dryNum, weedNum, insectNum // 保存状态用于排序
                 });
                 visitedGids.add(gid);
-            } else if ((autoBadEnabled && canPutBugOrWeed) || helpEnabled || stealEnabled) {
-                otherFriends.push({ gid, name, isPriority: false });
+            } else if ((autoBadEnabled && canPutBugOrWeed) || helpScanEnabled || stealEnabled) {
+                idleProbeCandidates.push({ gid, name, isPriority: false });
                 visitedGids.add(gid);
             }
         }
@@ -1006,7 +1070,9 @@ async function checkFriends() {
             return helpB - helpA;
         });
 
-        const friendsToVisit = [...priorityFriends, ...otherFriends];
+        const idleProbeBudget = getIdleFriendProbeBudget(priorityFriends.length);
+        const probeFriends = selectIdleFriendProbeCandidates(idleProbeCandidates, idleProbeBudget);
+        const friendsToVisit = [...priorityFriends, ...probeFriends];
 
         if (friendsToVisit.length === 0) {
             return false;
@@ -1014,19 +1080,25 @@ async function checkFriends() {
 
         const totalActions = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
         const stealPlantBlacklistSet = getStealPlantBlacklistSet();
+        let visitedCount = 0;
+        let probeVisitedCount = 0;
 
         for (let i = 0; i < friendsToVisit.length; i++) {
             const friend = friendsToVisit[i];
             
-            // 如果是仅捣乱的好友（帮忙/偷菜均未开启），且次数已用完，则停止
-            if (!friend.isPriority && !helpEnabled && !stealEnabled && !canOperate(10004) && !canOperate(10003)) {
-                break;
-            }
-
             try {
-                await visitFriend(friend, totalActions, state.gid, { stealPlantBlacklistSet });
+                const result = await visitFriend(friend, totalActions, state.gid, { stealPlantBlacklistSet });
+                visitedCount++;
+                if (friend && friend.isProbe) {
+                    probeVisitedCount++;
+                    markIdleFriendProbeCooldown(friend.gid, !!(result && result.acted));
+                }
             } catch {
                 // 单个好友访问失败不影响整体
+                if (friend && friend.isProbe) {
+                    probeVisitedCount++;
+                    markIdleFriendProbeCooldown(friend.gid, false);
+                }
             }
             
             // 稍微等待，避免请求过快
@@ -1053,7 +1125,7 @@ async function checkFriends() {
         
         if (summary.length > 0) {
             log('好友', `巡查 ${friendsToVisit.length} 人 → ${summary.join('/')}`, {
-                module: 'friend', event: 'friend_cycle', result: 'ok', visited: friendsToVisit.length, summary
+                module: 'friend', event: 'friend_cycle', result: 'ok', visited: visitedCount, previewTargets: priorityFriends.length, probeTargets: probeFriends.length, probed: probeVisitedCount, summary
             });
         }
         return summary.length > 0;
@@ -1100,6 +1172,8 @@ function startFriendCheckLoop(options = {}) {
 function stopFriendCheckLoop() {
     friendLoopRunning = false;
     externalSchedulerMode = false;
+    idleFriendProbeCursor = 0;
+    idleFriendProbeCooldownUntil.clear();
     networkEvents.off('friendApplicationReceived', onFriendApplicationReceived);
     friendScheduler.clearAll();
 }

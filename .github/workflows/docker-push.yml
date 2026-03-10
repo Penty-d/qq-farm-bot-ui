@@ -1,42 +1,43 @@
-name: Docker-Build-Push
+name: Push-to-Aliyun
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
+  workflow_dispatch: # 支持手动点击运行
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 必须保留 QEMU 才能在 GitHub 的电脑上模拟出 arm/v7 环境
+      # 必须：模拟 ARM 架构环境（玩客云需要）
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
+      # 必须：启用 Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
+      # 使用你填写的 Secrets 登录阿里云
+      - name: Login to Aliyun
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ secrets.ALIVER_REGISTRY }}
+          username: ${{ secrets.ALIVER_USERNAME }}
+          password: ${{ secrets.ALIVER_PASSWORD }}
 
+      # 核心步骤：编译并推送到阿里云
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          # 只保留这一个，针对你的设备进行精准构建
+          # 针对你的玩客云架构
           platforms: linux/arm/v7
-          tags: ghcr.io/${{ github.repository_owner }}/qq-farm-bot-ui:latest
+          # 完整的阿里云镜像地址
+          tags: ${{ secrets.ALIVER_REGISTRY }}/591047593/qq-farm-bot-ui:latest
+          # 开启缓存，下次编译会快很多
           cache-from: type=gha
           cache-to: type=gha,mode=max

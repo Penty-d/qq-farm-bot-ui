@@ -88,7 +88,7 @@ function normalizeStealPlantBlacklist(input: unknown) {
 const localSettings = ref({
   plantingStrategy: 'preferred',
   preferredSeedId: 0,
-  organicAntiStealMinutes: 5,
+  bagSeedPriority: [] as number[],
   intervals: { farmMin: 2, farmMax: 2, friendMin: 10, friendMax: 10 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
   automation: {
@@ -381,7 +381,7 @@ function syncLocalSettings() {
     localSettings.value = JSON.parse(JSON.stringify({
       plantingStrategy: settings.value.plantingStrategy,
       preferredSeedId: settings.value.preferredSeedId,
-      organicAntiStealMinutes: settings.value.organicAntiStealMinutes || 5,
+      bagSeedPriority: settings.value.bagSeedPriority || [],
       intervals: settings.value.intervals,
       friendQuietHours: settings.value.friendQuietHours,
       automation: settings.value.automation,
@@ -502,6 +502,7 @@ const fertilizerOptions = [
 ]
 
 const plantingStrategyOptions = [
+  { label: '优先背包种子', value: 'bag_priority' },
   { label: '优先种植种子', value: 'preferred' },
   { label: '最高等级作物', value: 'level' },
   { label: '最大经验/时', value: 'max_exp' },
@@ -587,6 +588,118 @@ const preferredSeedOptions = computed(() => {
   return options
 })
 
+interface BagSeedItem {
+  seedId: number
+  name: string
+  count: number
+  requiredLevel: number
+  image: string
+  plantSize: number
+}
+
+const bagSeeds = ref<BagSeedItem[]>([])
+const bagSeedsLoading = ref(false)
+
+async function fetchBagSeeds() {
+  if (!currentAccountId.value) return
+  bagSeedsLoading.value = true
+  try {
+    const { data } = await api.get('/api/bag/seeds', {
+      headers: { 'x-account-id': currentAccountId.value },
+    })
+    if (data && data.ok && Array.isArray(data.data)) {
+      bagSeeds.value = data.data
+    }
+  }
+  catch {
+    bagSeeds.value = []
+  }
+  finally {
+    bagSeedsLoading.value = false
+  }
+}
+
+const sortedBagSeeds = computed(() => {
+  const priority = localSettings.value.bagSeedPriority || []
+  const priorityMap = new Map<number, number>()
+  priority.forEach((seedId, index) => {
+    priorityMap.set(seedId, index)
+  })
+
+  return [...bagSeeds.value].sort((a, b) => {
+    const pa = priorityMap.has(a.seedId) ? priorityMap.get(a.seedId)! : Number.MAX_SAFE_INTEGER
+    const pb = priorityMap.has(b.seedId) ? priorityMap.get(b.seedId)! : Number.MAX_SAFE_INTEGER
+    if (pa !== pb) return pa - pb
+    return b.requiredLevel - a.requiredLevel
+  })
+})
+
+function moveSeedUp(index: number) {
+  if (index <= 0) return
+  const seeds = sortedBagSeeds.value
+  const newPriority: number[] = seeds.map(s => s.seedId)
+  const a = newPriority[index]!
+  const b = newPriority[index - 1]!
+  newPriority[index] = b
+  newPriority[index - 1] = a
+  localSettings.value.bagSeedPriority = newPriority
+}
+
+function moveSeedDown(index: number) {
+  const seeds = sortedBagSeeds.value
+  if (index >= seeds.length - 1) return
+  const newPriority: number[] = seeds.map(s => s.seedId)
+  const a = newPriority[index]!
+  const b = newPriority[index + 1]!
+  newPriority[index] = b
+  newPriority[index + 1] = a
+  localSettings.value.bagSeedPriority = newPriority
+}
+
+function resetBagSeedPriority() {
+  localSettings.value.bagSeedPriority = []
+}
+
+const dragIndex = ref<number | null>(null)
+
+function onDragStart(e: DragEvent, index: number) {
+  dragIndex.value = index
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+function onDrop(targetIndex: number) {
+  if (dragIndex.value === null || dragIndex.value === targetIndex) {
+    dragIndex.value = null
+    return
+  }
+
+  const seeds = sortedBagSeeds.value
+  const newPriority: number[] = seeds.map(s => s.seedId)
+  const draggedId = newPriority[dragIndex.value]!
+
+  newPriority.splice(dragIndex.value, 1)
+  newPriority.splice(targetIndex, 0, draggedId)
+
+  localSettings.value.bagSeedPriority = newPriority
+  dragIndex.value = null
+}
+
+function onDragEnd() {
+  dragIndex.value = null
+}
+
+watch(() => localSettings.value.plantingStrategy, (newVal) => {
+  if (newVal === 'bag_priority') {
+    fetchBagSeeds()
+  }
+}, { immediate: true })
+
 const analyticsSortByMap: Record<string, string> = {
   max_exp: 'exp',
   max_fert_exp: 'fert',
@@ -598,7 +711,7 @@ const strategyPreviewLabel = ref<string | null>(null)
 
 watchEffect(async () => {
   const strategy = localSettings.value.plantingStrategy
-  if (strategy === 'preferred') {
+  if (strategy === 'preferred' || strategy === 'bag_priority') {
     strategyPreviewLabel.value = null
     return
   }
@@ -782,7 +895,7 @@ async function handleTestOffline() {
               :options="preferredSeedOptions"
             />
             <!-- 预览区域：与 BaseSelect 同结构同样式，避免切换策略时布局跳动 -->
-            <div v-else class="flex flex-col gap-1.5">
+            <div v-else-if="localSettings.plantingStrategy !== 'bag_priority'" class="flex flex-col gap-1.5">
               <label class="text-sm text-gray-700 font-medium dark:text-gray-300">策略选种预览</label>
               <div
                 class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400"
@@ -790,6 +903,92 @@ async function handleTestOffline() {
                 <span class="truncate">{{ strategyPreviewLabel ?? '加载中...' }}</span>
                 <div class="i-carbon-chevron-down shrink-0 text-lg text-gray-400" />
               </div>
+            </div>
+          </div>
+
+          <!-- 背包种子优先级列表 -->
+          <div v-if="localSettings.plantingStrategy === 'bag_priority'" class="mt-3">
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-sm text-gray-700 font-medium dark:text-gray-300">背包种子优先级</label>
+              <div class="flex items-center gap-2">
+                <button
+                  class="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
+                  @click="fetchBagSeeds"
+                >
+                  刷新
+                </button>
+                <button
+                  class="text-xs text-gray-500 hover:text-gray-600 dark:text-gray-400"
+                  @click="resetBagSeedPriority"
+                >
+                  重置排序
+                </button>
+              </div>
+            </div>
+
+            <div v-if="bagSeedsLoading" class="text-center py-4 text-gray-500">
+              加载中...
+            </div>
+            <div v-else-if="sortedBagSeeds.length === 0" class="text-center py-4 text-gray-500 dark:text-gray-400">
+              背包中暂无种子
+            </div>
+            <div v-else class="space-y-1 max-h-64 overflow-y-auto">
+              <div
+                v-for="(seed, index) in sortedBagSeeds"
+                :key="seed.seedId"
+                draggable="true"
+                class="flex items-center gap-3 p-2 border rounded-lg cursor-grab select-none border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50"
+                @dragstart="onDragStart($event, index)"
+                @dragover="onDragOver"
+                @drop="onDrop(index)"
+                @dragend="onDragEnd"
+              >
+                <div class="flex items-center gap-1 text-gray-400 dark:text-gray-500">
+                  <div class="i-carbon-draggable text-lg" />
+                  <span class="w-5 text-center text-sm font-medium">{{ index + 1 }}</span>
+                </div>
+                <img
+                  v-if="seed.image"
+                  :src="seed.image"
+                  :alt="seed.name"
+                  class="w-8 h-8 object-contain pointer-events-none"
+                >
+                <div v-else class="w-8 h-8 bg-gray-200 rounded dark:bg-gray-700 pointer-events-none" />
+                <div class="flex-1 min-w-0 pointer-events-none">
+                  <div class="flex items-center gap-2">
+                    <span
+                      v-if="seed.requiredLevel >= 200"
+                      class="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded dark:bg-yellow-900/50 dark:text-yellow-400"
+                    >活动</span>
+                    <span class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ seed.name }}</span>
+                  </div>
+                  <div class="text-xs text-gray-500 dark:text-gray-400">
+                    数量: {{ seed.count }} | {{ seed.requiredLevel >= 200 ? '活动种子' : `${seed.requiredLevel}级` }}
+                    <span v-if="seed.plantSize > 1"> | {{ seed.plantSize }}x{{ seed.plantSize }}</span>
+                  </div>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <button
+                    class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30"
+                    :disabled="index === 0"
+                    @click.stop="moveSeedUp(index)"
+                  >
+                    <div class="i-carbon-chevron-up" />
+                  </button>
+                  <button
+                    class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30"
+                    :disabled="index === sortedBagSeeds.length - 1"
+                    @click.stop="moveSeedDown(index)"
+                  >
+                    <div class="i-carbon-chevron-down" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+              <p>* 拖拽或点击箭头调整种植优先级</p>
+              <p>* 仅支持 1x1 种子，2x2 及以上种子会被跳过</p>
+              <p>* 1x1 种子用完后将自动切换为"最高等级"策略</p>
             </div>
           </div>
 
@@ -1300,5 +1499,5 @@ async function handleTestOffline() {
 </template>
 
 <style scoped lang="postcss">
-/* Custom styles if needed */
+/* 种子列表拖拽排序动画 */
 </style>

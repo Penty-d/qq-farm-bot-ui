@@ -8,7 +8,7 @@ const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services
 
 const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
-const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit'];
+const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
 const PUSHOO_CHANNELS = new Set([
     'webhook', 'qmsg', 'serverchan', 'pushplus', 'pushplushxtrip',
     'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
@@ -68,12 +68,12 @@ const DEFAULT_ACCOUNT_CONFIG = {
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES], // 肥料种植类型
         organicAntiSteal: false,  // 有机反贼
     },
-    organicAntiStealMinutes: 5, // 有机反贼检测间隔分钟数
-    plantingStrategy: 'preferred', // 种植策略
-    preferredSeedId: 0, // 优选种子 ID
-    intervals: { 
-        farm: 2, 
-        friend: 10, 
+    plantingStrategy: 'preferred',
+    preferredSeedId: 0,
+    bagSeedPriority: [],
+    intervals: {
+        farm: 2,
+        friend: 10,
         farmMin: 2,
         farmMax: 2,
         friendMin: 10,
@@ -212,6 +212,18 @@ function normalizeStealPlantBlacklist(input, fallback = DEFAULT_STEAL_PLANT_BLAC
     return normalized;
 }
 
+function normalizeBagSeedPriority(input) {
+    if (!Array.isArray(input)) return [];
+    const normalized = [];
+    for (const item of input) {
+        const value = Number.parseInt(item, 10);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        if (normalized.includes(value)) continue;
+        normalized.push(value);
+    }
+    return normalized;
+}
+
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const srcAutomation = (base && base.automation && typeof base.automation === 'object')
         ? base.automation
@@ -241,6 +253,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
+        bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
     };
 }
 
@@ -279,8 +292,8 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
     }
 
-    if (src.organicAntiStealMinutes !== undefined && src.organicAntiStealMinutes !== null) {
-        cfg.organicAntiStealMinutes = Math.max(1, Math.min(1000, Number.parseInt(src.organicAntiStealMinutes, 10) || 5));
+    if (src.bagSeedPriority !== undefined) {
+        cfg.bagSeedPriority = normalizeBagSeedPriority(src.bagSeedPriority);
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -496,8 +509,8 @@ function applyConfigSnapshot(snapshot, options = {}) {
         next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
     }
 
-    if (cfg.organicAntiStealMinutes !== undefined && cfg.organicAntiStealMinutes !== null) {
-        next.organicAntiStealMinutes = Math.max(1, Math.min(1000, Number.parseInt(cfg.organicAntiStealMinutes, 10) || 5));
+    if (cfg.bagSeedPriority !== undefined) {
+        next.bagSeedPriority = normalizeBagSeedPriority(cfg.bagSeedPriority);
     }
 
     if (cfg.intervals && typeof cfg.intervals === 'object') {
@@ -549,8 +562,14 @@ function getPlantingStrategy(accountId) {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
 }
 
-function getOrganicAntiStealMinutes(accountId) {
-    return getAccountConfigSnapshot(accountId).organicAntiStealMinutes || 5;
+function getBagSeedPriority(accountId) {
+    return [...(getAccountConfigSnapshot(accountId).bagSeedPriority || [])];
+}
+
+function setPlantingStrategy(accountId, strategy) {
+    if (!ALLOWED_PLANTING_STRATEGIES.includes(strategy)) return false;
+    applyConfigSnapshot({ plantingStrategy: strategy }, { accountId });
+    return true;
 }
 
 function getIntervals(accountId) {
@@ -720,7 +739,8 @@ module.exports = {
     isAutomationOn,
     getPreferredSeed,
     getPlantingStrategy,
-    getOrganicAntiStealMinutes,
+    getBagSeedPriority,
+    setPlantingStrategy,
     getIntervals,
     getFriendQuietHours,
     getFriendBlacklist,

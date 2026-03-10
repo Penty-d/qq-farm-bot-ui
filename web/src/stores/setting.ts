@@ -60,10 +60,19 @@ export interface QrLoginConfig {
   apiDomain: string
 }
 
+export interface BagSeed {
+  seedId: number
+  name: string
+  count: number
+  requiredLevel: number
+  image: string
+  plantSize: number
+}
+
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
-  organicAntiStealMinutes: number
+  bagSeedPriority: number[]
   intervals: IntervalsConfig
   friendQuietHours: FriendQuietHoursConfig
   automation: AutomationConfig
@@ -76,7 +85,7 @@ export const useSettingStore = defineStore('setting', () => {
   const settings = ref<SettingsState>({
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
-    organicAntiStealMinutes: 5,
+    bagSeedPriority: [],
     intervals: {},
     friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
     automation: {},
@@ -111,7 +120,7 @@ export const useSettingStore = defineStore('setting', () => {
         const d = data.data
         settings.value.plantingStrategy = d.strategy || 'preferred'
         settings.value.preferredSeedId = d.preferredSeed || 0
-        settings.value.organicAntiStealMinutes = d.organicAntiStealMinutes || 5
+        settings.value.bagSeedPriority = Array.isArray(d.bagSeedPriority) ? d.bagSeedPriority : []
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
         settings.value.automation = d.automation || {}
@@ -148,7 +157,7 @@ export const useSettingStore = defineStore('setting', () => {
       const settingsPayload = {
         plantingStrategy: newSettings.plantingStrategy,
         preferredSeedId: newSettings.preferredSeedId,
-        organicAntiStealMinutes: newSettings.organicAntiStealMinutes,
+        bagSeedPriority: newSettings.bagSeedPriority,
         intervals: newSettings.intervals,
         friendQuietHours: newSettings.friendQuietHours,
       }

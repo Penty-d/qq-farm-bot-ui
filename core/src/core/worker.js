@@ -598,6 +598,9 @@ async function handleApiCall(msg) {
             case 'getBag':
                 result = await require('../services/warehouse').getBagDetail();
                 break;
+            case 'getBagSeeds':
+                result = await require('../services/warehouse').getBagSeeds();
+                break;
             case 'setAutomation': {
                 const payload = args && args[0] ? args[0] : {};
                 applyRuntimeConfig({ automation: { [payload.key]: payload.value } }, true);

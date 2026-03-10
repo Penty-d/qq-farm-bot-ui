@@ -4,7 +4,7 @@
  */
 
 const protobuf = require('protobufjs');
-const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById } = require('../config/gameConfig');
+const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId } = require('../config/gameConfig');
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -391,6 +391,46 @@ async function getBagDetail() {
     return { totalKinds: items.length, items };
 }
 
+/**
+ * 获取背包中的所有种子
+ * @returns {Promise<Array<{seedId: number, name: string, count: number, requiredLevel: number, image: string, plantSize: number}>>} 种子列表
+ */
+async function getBagSeeds() {
+    const bagReply = await getBag();
+    const items = getBagItems(bagReply);
+    const seeds = [];
+    const merged = new Map();
+
+    for (const item of items) {
+        const id = toNum(item.id);
+        const count = toNum(item.count);
+        if (count <= 0) continue;
+
+        const plant = getPlantBySeedId(id);
+        if (!plant) continue;
+
+        if (!merged.has(id)) {
+            merged.set(id, {
+                seedId: id,
+                name: plant.name || `种子${id}`,
+                count: 0,
+                requiredLevel: Number(plant.land_level_need) || 0,
+                image: getSeedImageBySeedId(id),
+                plantSize: Math.max(1, Number(plant.size) || 1),
+            });
+        }
+        merged.get(id).count += count;
+    }
+
+    for (const seed of merged.values()) {
+        seeds.push(seed);
+    }
+
+    // 默认按等级降序排列
+    seeds.sort((a, b) => b.requiredLevel - a.requiredLevel);
+    return seeds;
+}
+
 // ============ 出售逻辑 ============
 
 /**
@@ -517,6 +557,7 @@ async function sellAllFruits() {
 module.exports = {
     getBag,
     getBagDetail,
+    getBagSeeds,
     sellItems,
     useItem,
     batchUseItems,

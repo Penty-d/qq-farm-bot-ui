@@ -101,6 +101,7 @@ function createDataProvider(options) {
         getFriendLands: (accountRef, gid) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriendLands', gid),
         doFriendOp: (accountRef, gid, opType) => callWorkerApi(resolveAccountRefId(accountRef), 'doFriendOp', gid, opType),
         getBag: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getBag'),
+        getBagSeeds: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getBagSeeds'),
         getDailyGifts: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
         getSeeds: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeeds'),
 
@@ -125,11 +126,11 @@ function createDataProvider(options) {
             const body = (payload && typeof payload === 'object') ? payload : {};
             const plantingStrategy = (body.plantingStrategy !== undefined) ? body.plantingStrategy : body.strategy;
             const preferredSeedId = (body.preferredSeedId !== undefined) ? body.preferredSeedId : body.seedId;
+            const bagSeedPriority = body.bagSeedPriority;
             const snapshot = {
                 plantingStrategy,
                 preferredSeedId,
-                organicAntiStealMinutes: body.organicAntiStealMinutes,
-                automation: body.automation,
+                bagSeedPriority,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
             };
@@ -139,7 +140,7 @@ function createDataProvider(options) {
             return {
                 strategy: store.getPlantingStrategy(accountId),
                 preferredSeed: store.getPreferredSeed(accountId),
-                organicAntiStealMinutes: store.getOrganicAntiStealMinutes(accountId),
+                bagSeedPriority: store.getBagSeedPriority(accountId),
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
                 configRevision: rev,

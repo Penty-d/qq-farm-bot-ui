@@ -19,6 +19,8 @@ const PUSHOO_CHANNELS = new Set([
 const INTERVAL_MAX_SEC = 86400;
 const DEFAULT_OFFLINE_DELETE_SEC = 1;
 const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
+const DEFAULT_FERTILIZER_NORMAL_TIMING = 'immediate';
+const ALLOWED_FERTILIZER_NORMAL_TIMINGS = ['immediate', 'optimal_stage'];
 const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
 const DEFAULT_STEAL_PLANT_BLACKLIST = [];
 const DEFAULT_OFFLINE_REMINDER = {
@@ -64,6 +66,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         open_server_gift: true,
         sell: false,
         fertilizer: 'none',
+        fertilizer_normal_timing: DEFAULT_FERTILIZER_NORMAL_TIMING,
         fertilizer_multi_season: false,
         fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
     },
@@ -258,6 +261,9 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
             if (k === 'fertilizer') {
                 const allowed = ['both', 'normal', 'organic', 'none'];
                 cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
+            } else if (k === 'fertilizer_normal_timing') {
+                const normalized = String(v || '').trim().toLowerCase();
+                cfg.automation[k] = ALLOWED_FERTILIZER_NORMAL_TIMINGS.includes(normalized) ? normalized : cfg.automation[k];
             } else if (k === 'fertilizer_land_types') {
                 cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]);
             } else if (k === 'friend_steal_blacklist') {
@@ -470,6 +476,9 @@ function applyConfigSnapshot(snapshot, options = {}) {
             if (k === 'fertilizer') {
                 const allowed = ['both', 'normal', 'organic', 'none'];
                 next.automation[k] = allowed.includes(v) ? v : next.automation[k];
+            } else if (k === 'fertilizer_normal_timing') {
+                const normalized = String(v || '').trim().toLowerCase();
+                next.automation[k] = ALLOWED_FERTILIZER_NORMAL_TIMINGS.includes(normalized) ? normalized : next.automation[k];
             } else if (k === 'fertilizer_land_types') {
                 next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]);
             } else if (k === 'friend_steal_blacklist') {

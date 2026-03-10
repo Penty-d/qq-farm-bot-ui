@@ -15,6 +15,7 @@ export interface AutomationConfig {
   sell?: boolean
   fertilizer?: string
   fertilizer_multi_season?: boolean
+  fertilizer_normal_timing?: 'immediate' | 'optimal_stage'
   fertilizer_land_types?: string[]
   friend_steal?: boolean
   friend_steal_blacklist?: number[]

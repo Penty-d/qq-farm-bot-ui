@@ -57,6 +57,11 @@ const fertilizerLandTypeOptions = [
   { label: '普通土地', value: 'normal' },
 ]
 
+const fertilizerNormalTimingOptions = [
+  { label: '立即施肥', value: 'immediate' },
+  { label: '最优阶段施肥', value: 'optimal_stage' },
+]
+
 function normalizeFertilizerLandTypes(input: unknown) {
   const source = Array.isArray(input) ? input : allFertilizerLandTypes
   const normalized: string[] = []
@@ -69,6 +74,13 @@ function normalizeFertilizerLandTypes(input: unknown) {
     normalized.push(value)
   }
   return normalized
+}
+
+function normalizeFertilizerNormalTiming(input: unknown) {
+  const value = String(input || '').trim().toLowerCase()
+  if (value === 'optimal_stage')
+    return 'optimal_stage'
+  return 'immediate'
 }
 
 function normalizeStealPlantBlacklist(input: unknown) {
@@ -116,6 +128,7 @@ const localSettings = ref({
     open_server_gift: false,
     fertilizer: 'none',
     fertilizer_multi_season: false,
+    fertilizer_normal_timing: 'immediate',
     fertilizer_land_types: [...allFertilizerLandTypes],
   },
 })
@@ -412,6 +425,7 @@ function syncLocalSettings() {
         open_server_gift: false,
         fertilizer: 'none',
         fertilizer_multi_season: false,
+        fertilizer_normal_timing: 'immediate',
         fertilizer_land_types: [...allFertilizerLandTypes],
       }
     }
@@ -443,6 +457,7 @@ function syncLocalSettings() {
         open_server_gift: false,
         fertilizer: 'none',
         fertilizer_multi_season: false,
+        fertilizer_normal_timing: 'immediate',
         fertilizer_land_types: [...allFertilizerLandTypes],
       }
       localSettings.value.automation = {
@@ -452,6 +467,7 @@ function syncLocalSettings() {
     }
 
     localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
+    localSettings.value.automation.fertilizer_normal_timing = normalizeFertilizerNormalTiming(localSettings.value.automation.fertilizer_normal_timing)
     localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
 
     // Sync offline settings (global)
@@ -637,6 +653,7 @@ async function saveAccountSettings() {
     return
 
   localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
+  localSettings.value.automation.fertilizer_normal_timing = normalizeFertilizerNormalTiming(localSettings.value.automation.fertilizer_normal_timing)
   localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
 
   saving.value = true
@@ -1025,12 +1042,18 @@ async function handleTestOffline() {
                 施肥前会优先按土地类型过滤，仅对命中范围的地块执行施肥策略。
               </p>
             </div>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(180px,220px)_auto] md:items-end">
               <BaseSelect
                 v-model="localSettings.automation.fertilizer"
                 label="施肥策略"
                 class="w-full"
                 :options="fertilizerOptions"
+              />
+              <BaseSelect
+                v-model="localSettings.automation.fertilizer_normal_timing"
+                label="普通肥施肥时机"
+                class="w-full"
+                :options="fertilizerNormalTimingOptions"
               />
               <BaseSwitch
                 v-model="localSettings.automation.fertilizer_multi_season"

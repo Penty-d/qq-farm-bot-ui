@@ -81,6 +81,11 @@ const AUTOMATION_SCHEMA = {
             oneOf: ['none', 'normal', 'organic', 'both'],
             default: 'none',
         },
+        fertilizer_normal_timing: {
+            type: 'string',
+            oneOf: ['immediate', 'optimal_stage'],
+            default: 'immediate',
+        },
     },
     additionalProperties: false,
 };

@@ -82,6 +82,10 @@ async function insecticide(landIds) {
 const NORMAL_FERTILIZER_ID = 1011;
 // 有机肥料 ID
 const ORGANIC_FERTILIZER_ID = 1012;
+const FERTILIZER_NORMAL_TIMING_IMMEDIATE = 'immediate';
+const FERTILIZER_NORMAL_TIMING_OPTIMAL_STAGE = 'optimal_stage';
+const plantPhaseDurationsCache = new Map();
+const plantOptimalPhaseIndexesCache = new Map();
 
 /**
  * 施肥 - 必须逐块进行，服务器不支持批量
@@ -158,6 +162,91 @@ function getOrganicFertilizerTargetsFromLands(lands) {
             if (leftTimes <= 0) continue;
         }
 
+        targets.push(landId);
+    }
+    return targets;
+}
+
+function parseGrowPhaseDurations(growPhasesText) {
+    const raw = String(growPhasesText || '');
+    const parts = raw.split(';');
+    const durations = [];
+    for (const part of parts) {
+        const item = String(part || '').trim();
+        if (!item) continue;
+        const idx = item.lastIndexOf(':');
+        if (idx < 0) continue;
+        const sec = Number.parseInt(item.slice(idx + 1).trim(), 10);
+        if (!Number.isFinite(sec) || sec < 0) continue;
+        durations.push(sec);
+    }
+    return durations;
+}
+
+function getPlantPhaseDurations(plantId) {
+    const id = toNum(plantId);
+    if (!id) return [];
+    if (plantPhaseDurationsCache.has(id)) {
+        return plantPhaseDurationsCache.get(id);
+    }
+    const plantCfg = getPlantById(id);
+    const durations = parseGrowPhaseDurations(plantCfg && plantCfg.grow_phases);
+    plantPhaseDurationsCache.set(id, durations);
+    return durations;
+}
+
+function getPlantOptimalPhaseIndexes(plantId) {
+    const id = toNum(plantId);
+    if (!id) return [];
+    if (plantOptimalPhaseIndexesCache.has(id)) {
+        return plantOptimalPhaseIndexesCache.get(id);
+    }
+    const durations = getPlantPhaseDurations(id);
+    if (durations.length === 0) {
+        plantOptimalPhaseIndexesCache.set(id, []);
+        return [];
+    }
+    let maxDuration = Math.max(...durations);
+    if (!Number.isFinite(maxDuration)) maxDuration = 0;
+    const indexes = [];
+    for (let i = 0; i < durations.length; i++) {
+        if (durations[i] === maxDuration) indexes.push(i);
+    }
+    plantOptimalPhaseIndexesCache.set(id, indexes);
+    return indexes;
+}
+
+function getOptimalStageNormalFertilizerTargetsFromLands(lands) {
+    const list = Array.isArray(lands) ? lands : [];
+    const automation = getAutomation() || {};
+    const enableMultiSeasonFertilizer = !!automation.fertilizer_multi_season;
+    const targets = [];
+    for (const land of list) {
+        if (!land || !land.unlocked) continue;
+        const landId = toNum(land.id);
+        if (!landId) continue;
+
+        const plant = land.plant;
+        if (!plant || !Array.isArray(plant.phases) || plant.phases.length === 0) continue;
+        const season = toNum(plant.season);
+        if (!enableMultiSeasonFertilizer && season !== 1) continue;
+        if (Object.prototype.hasOwnProperty.call(plant, 'left_inorc_fert_times')) {
+            const leftTimes = toNum(plant.left_inorc_fert_times);
+            if (leftTimes <= 0) continue;
+        } else {
+            continue;
+        }
+        const currentPhase = getCurrentPhase(plant.phases);
+        if (!currentPhase || toNum(currentPhase.phase) === PlantPhase.DEAD) continue;
+
+        const optimalIndexes = getPlantOptimalPhaseIndexes(plant.id);
+        if (optimalIndexes.length === 0) continue;
+        const totalPhaseCount = getPlantPhaseDurations(plant.id).length;
+        if (totalPhaseCount <= 0) continue;
+        const remainingPhaseCount = plant.phases.length;
+        const currentIndex = totalPhaseCount - remainingPhaseCount;
+        if (currentIndex < 0 || currentIndex >= totalPhaseCount) continue;
+        if (!optimalIndexes.includes(currentIndex)) continue;
         targets.push(landId);
     }
     return targets;
@@ -290,12 +379,24 @@ function formatFertilizerLandTypes(types) {
 async function runFertilizerByConfig(plantedLands = [], options = {}) {
     const automation = getAutomation() || {};
     const fertilizerConfig = automation.fertilizer || 'none';
-    const reason = String(options.reason || '').trim().toLowerCase() === 'multi_season' ? 'multi_season' : 'normal';
-    const reasonLabel = reason === 'multi_season' ? '多季补肥' : '常规施肥';
+    const timingRaw = String(automation.fertilizer_normal_timing || FERTILIZER_NORMAL_TIMING_IMMEDIATE).trim().toLowerCase();
+    const fertilizerNormalTiming = timingRaw === FERTILIZER_NORMAL_TIMING_OPTIMAL_STAGE
+        ? FERTILIZER_NORMAL_TIMING_OPTIMAL_STAGE
+        : FERTILIZER_NORMAL_TIMING_IMMEDIATE;
+    const reasonInput = String(options.reason || '').trim().toLowerCase();
+    const reason = reasonInput === 'multi_season'
+        ? 'multi_season'
+        : reasonInput === 'farm_cycle'
+            ? 'farm_cycle'
+            : 'normal';
+    const reasonLabel = reason === 'multi_season' ? '多季补肥' : reason === 'farm_cycle' ? '巡田施肥' : '常规施肥';
     const eventName = reason === 'multi_season' ? '多季补肥' : 'fertilize';
+    const onlyNormal = !!options.onlyNormal;
     const selectedLandTypes = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
     const selectedLandTypeNames = formatFertilizerLandTypes(selectedLandTypes);
     const planted = [...new Set((Array.isArray(plantedLands) ? plantedLands : []).map(v => toNum(v)).filter(Boolean))];
+    const shouldUseOptimalStageNormal = fertilizerNormalTiming === FERTILIZER_NORMAL_TIMING_OPTIMAL_STAGE && reason === 'farm_cycle';
+    const shouldSkipImmediateNormal = fertilizerNormalTiming === FERTILIZER_NORMAL_TIMING_OPTIMAL_STAGE && reason !== 'farm_cycle';
 
     if (selectedLandTypes.length === 0) {
         log('施肥', `${reasonLabel}：未勾选施肥范围，跳过本轮施肥`, {
@@ -308,7 +409,7 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
         return { normal: 0, organic: 0 };
     }
 
-    if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both') {
+    if (planted.length === 0 && fertilizerConfig !== 'organic' && fertilizerConfig !== 'both' && !shouldUseOptimalStageNormal) {
         return { normal: 0, organic: 0 };
     }
 
@@ -344,9 +445,14 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
         return { normal: 0, organic: 0 };
     }
 
-    let normalTargets = planted;
-    if (landTypeById.size > 0) {
-        normalTargets = filterLandIdsByTypes(planted, landTypeById, selectedLandTypes);
+    let normalTargets = [];
+    if (!shouldSkipImmediateNormal) {
+        normalTargets = shouldUseOptimalStageNormal
+            ? getOptimalStageNormalFertilizerTargetsFromLands(latestLands)
+            : planted;
+        if (landTypeById.size > 0) {
+            normalTargets = filterLandIdsByTypes(normalTargets, landTypeById, selectedLandTypes);
+        }
     }
 
     let fertilizedNormal = 0;
@@ -368,7 +474,7 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
         }
     }
 
-    if (fertilizerConfig === 'organic' || fertilizerConfig === 'both') {
+    if (!onlyNormal && (fertilizerConfig === 'organic' || fertilizerConfig === 'both')) {
         let organicTargets = planted;
         if (latestLands.length > 0) {
             organicTargets = getOrganicFertilizerTargetsFromLands(latestLands);
@@ -1308,20 +1414,41 @@ async function runFarmOperation(opType, options = {}) {
         }
     }
 
-    if (opType === 'all' && postHarvest && Array.isArray(postHarvest.growing) && postHarvest.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
-        const multiSeasonTargets = [...new Set(postHarvest.growing.map(v => toNum(v)).filter(Boolean))];
-        if (multiSeasonTargets.length > 0) {
+    if (opType === 'all') {
+        const automation = getAutomation() || {};
+        const fertilizerMode = String(automation.fertilizer || '').trim().toLowerCase();
+        const fertilizerNormalTiming = String(automation.fertilizer_normal_timing || FERTILIZER_NORMAL_TIMING_IMMEDIATE).trim().toLowerCase();
+        const shouldRunOptimalStageNormal = fertilizerNormalTiming === FERTILIZER_NORMAL_TIMING_OPTIMAL_STAGE
+            && (fertilizerMode === 'normal' || fertilizerMode === 'both');
+        if (shouldRunOptimalStageNormal) {
             try {
-                await runFertilizerByConfig(multiSeasonTargets, { reason: 'multi_season' });
+                await runFertilizerByConfig([], { reason: 'farm_cycle', onlyNormal: true });
             } catch (e) {
-                logWarn('施肥', `多季补肥执行失败: ${e.message}`, {
+                logWarn('施肥', `巡田最优阶段施肥执行失败: ${e.message}`, {
                     module: 'farm',
-                    event: '多季补肥',
+                    event: 'fertilize',
                     result: 'error',
                 });
             }
+        }else{
+            if (postHarvest && Array.isArray(postHarvest.growing) && postHarvest.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
+                const multiSeasonTargets = [...new Set(postHarvest.growing.map(v => toNum(v)).filter(Boolean))];
+                if (multiSeasonTargets.length > 0) {
+                    try {
+                        await runFertilizerByConfig(multiSeasonTargets, { reason: 'multi_season' });
+                    } catch (e) {
+                        logWarn('施肥', `多季补肥执行失败: ${e.message}`, {
+                            module: 'farm',
+                            event: '多季补肥',
+                            result: 'error',
+                        });
+                    }
+                }
+            }
         }
     }
+
+
     // 执行土地解锁/升级（手动 upgrade 总是执行；自动 all 受开关控制）
     const shouldAutoUpgrade = opType === 'all' && isAutomationOn('land_upgrade');
     if (shouldAutoUpgrade || opType === 'upgrade') {

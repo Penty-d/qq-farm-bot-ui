@@ -11,10 +11,12 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
+import { useToastStore } from '@/stores/toast'
 
 const settingStore = useSettingStore()
 const accountStore = useAccountStore()
 const farmStore = useFarmStore()
+const toast = useToastStore()
 
 const { settings, loading } = storeToRefs(settingStore)
 const { currentAccountId, accounts } = storeToRefs(accountStore)
@@ -25,6 +27,18 @@ const passwordSaving = ref(false)
 const offlineSaving = ref(false)
 const offlineTesting = ref(false)
 const qrSaving = ref(false)
+
+const token = computed(() => {
+  return localStorage.getItem('admin_token') || '未登录'
+})
+
+const copyToClipboard = (text: string) => {
+  navigator.clipboard.writeText(text).then(() => {
+    toast.success('复制成功')
+  }).catch(() => {
+    toast.error('复制失败，请手动复制')
+  })
+}
 
 const modalVisible = ref(false)
 const modalConfig = ref({
@@ -864,6 +878,8 @@ async function handleTestOffline() {
     </div>
 
     <div v-else class="grid grid-cols-1 mt-12 gap-4 text-sm lg:grid-cols-2">
+
+
       <!-- Card 1: Strategy & Automation -->
       <div v-if="currentAccountId" class="card h-full flex flex-col rounded-lg bg-white shadow dark:bg-gray-800">
         <!-- Strategy Header -->
@@ -1348,7 +1364,7 @@ async function handleTestOffline() {
           </div>
         </div>
         <!-- Offline Header -->
-        <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+        <div class="border-b bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
             <div class="i-carbon-notification" />
             下线提醒
@@ -1438,28 +1454,60 @@ async function handleTestOffline() {
               placeholder="例如: { &quot;title&quot;: &quot;{{title}}&quot;, &quot;message&quot;: &quot;{{content}}&quot; }"
             />
           </template>
+
+          <!-- Save Offline Button -->
+          <div class="flex justify-end gap-2 pt-3 border-t dark:border-gray-700">
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :loading="offlineTesting"
+              :disabled="offlineSaving"
+              @click="handleTestOffline"
+            >
+              测试通知
+            </BaseButton>
+            <BaseButton
+              variant="primary"
+              size="sm"
+              :loading="offlineSaving"
+              :disabled="offlineTesting"
+              @click="handleSaveOffline"
+            >
+              保存下线提醒设置
+            </BaseButton>
+          </div>
         </div>
 
-        <!-- Save Offline Button -->
-        <div class="mt-auto flex justify-end gap-2 border-t bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
-          <BaseButton
-            variant="secondary"
-            size="sm"
-            :loading="offlineTesting"
-            :disabled="offlineSaving"
-            @click="handleTestOffline"
-          >
-            测试通知
-          </BaseButton>
-          <BaseButton
-            variant="primary"
-            size="sm"
-            :loading="offlineSaving"
-            :disabled="offlineTesting"
-            @click="handleSaveOffline"
-          >
-            保存下线提醒设置
-          </BaseButton>
+        <!-- Token Info Header -->
+        <div class="border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+          <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
+            <div class="i-carbon-code" />
+            请求参数信息
+          </h3>
+        </div>
+
+        <!-- Token Info Content -->
+        <div class="p-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              :value="token"
+              readonly
+              class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            />
+            <BaseButton
+              v-if="token !== '未登录'"
+              variant="secondary"
+              size="sm"
+              @click="copyToClipboard(token)"
+            >
+              <div class="i-carbon-copy mr-1"></div>
+              复制
+            </BaseButton>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            x-admin-token 用于API请求认证，复制后可用于第三方工具调用接口。
+          </p>
         </div>
       </div>
     </div>

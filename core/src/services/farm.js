@@ -563,6 +563,11 @@ async function runOrganicAntiSteal() {
 
         recordOperation('antiSteal', harvestedCount);
         recordOperation('harvest', harvestedCount);
+        networkEvents.emit('farmHarvested', {
+            count: harvestedCount,
+            landIds: fertilizedLandIds,
+            opType: 'antiSteal',
+        });
     } catch (e) {
         const msg = String(e.message || '');
         if (msg.includes('1001021') || msg.includes('作物未成熟')) {
@@ -985,6 +990,8 @@ async function getLandsDetail() {
                 masterLandId,
                 occupiedLandIds,
                 plantSize,
+                currentSeason,
+                totalSeason,
             });
         }
 

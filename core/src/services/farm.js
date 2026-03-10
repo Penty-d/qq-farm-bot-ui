@@ -67,6 +67,69 @@ async function harvest(landIds) {
     return types.HarvestReply.decode(replyBody);
 }
 
+async function doHarvest(landIds, opType = 'harvest') {
+    const ids = (Array.isArray(landIds) ? landIds : []).filter(Boolean);
+    if (ids.length === 0) {
+        return { success: false, count: 0, error: null, reply: null };
+    }
+
+    try {
+        const reply = await harvest(ids);
+        log('收获', `收获完成 ${ids.length} 块土地`, {
+            module: 'farm',
+            event: 'harvest_crop',
+            result: 'ok',
+            count: ids.length,
+            landIds: ids,
+        });
+        recordOperation('harvest', ids.length);
+        networkEvents.emit('farmHarvested', {
+            count: ids.length,
+            landIds: ids,
+            opType,
+        });
+        return { success: true, count: ids.length, error: null, reply };
+    } catch (e) {
+        logWarn('收获', e.message, {
+            module: 'farm',
+            event: 'harvest_crop',
+            result: 'error',
+        });
+        return { success: false, count: 0, error: e.message, reply: null };
+    }
+}
+
+async function doHarvest(landIds, opType = 'harvest') {
+    const ids = (Array.isArray(landIds) ? landIds : []).filter(Boolean);
+    if (ids.length === 0) {
+        return { success: false, count: 0, reply: null };
+    }
+    try {
+        const reply = await harvest(ids);
+        log('收获', `收获完成 ${ids.length} 块土地`, {
+            module: 'farm',
+            event: 'harvest_crop',
+            result: 'ok',
+            count: ids.length,
+            landIds: ids,
+        });
+        recordOperation('harvest', ids.length);
+        networkEvents.emit('farmHarvested', {
+            count: ids.length,
+            landIds: ids,
+            opType,
+        });
+        return { success: true, count: ids.length, reply };
+    } catch (e) {
+        logWarn('收获', e.message, {
+            module: 'farm',
+            event: 'harvest_crop',
+            result: 'error',
+        });
+        return { success: false, count: 0, error: e };
+    }
+}
+
 async function waterLand(landIds) {
     const state = getUserState();
     return sendPlantRequest(types.WaterLandRequest, types.WaterLandReply, 'WaterLand', landIds, state.gid);
@@ -542,7 +605,7 @@ async function runOrganicAntiSteal() {
     });
     recordOperation('fertilize', fertilizedCount);
 
-    await sleep(30);
+    await sleep(25);// 等待服务器更新
 
     log('有机肥防偷', '开始收获施肥成功的地块...', {
         module: 'farm',
@@ -568,6 +631,17 @@ async function runOrganicAntiSteal() {
             landIds: fertilizedLandIds,
             opType: 'antiSteal',
         });
+
+        try {
+            await removePlant(fertilizedLandIds);
+            log('有机肥防偷', `已铲除 ${fertilizedLandIds.length} 块枯萎残留`, {
+                module: 'farm',
+                event: '有机肥防偷_铲除残留',
+                count: fertilizedLandIds.length,
+            });
+        } catch (e) {
+            logWarn('有机肥防偷', `铲除枯萎残留失败: ${e.message}`);
+        }
     } catch (e) {
         const msg = String(e.message || '');
         if (msg.includes('1001021') || msg.includes('作物未成熟')) {

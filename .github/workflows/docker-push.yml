@@ -16,11 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. 设置 QEMU (用于模拟不同架构，比如 arm/v7)
+      # 必须保留 QEMU 才能在 GitHub 的电脑上模拟出 arm/v7 环境
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 2. 设置 Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -36,8 +35,8 @@ jobs:
         with:
           context: .
           push: true
-          # 关键点：这里加入了多平台支持，包含你的 arm/v7
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          # 只保留这一个，针对你的设备进行精准构建
+          platforms: linux/arm/v7
           tags: ghcr.io/${{ github.repository_owner }}/qq-farm-bot-ui:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

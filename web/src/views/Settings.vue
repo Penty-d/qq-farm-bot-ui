@@ -1456,7 +1456,7 @@ async function handleTestOffline() {
           </template>
 
           <!-- Save Offline Button -->
-          <div class="flex justify-end gap-2 pt-3 border-t dark:border-gray-700">
+          <div class="flex justify-end gap-2 pt-3">
             <BaseButton
               variant="secondary"
               size="sm"

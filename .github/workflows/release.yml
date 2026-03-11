@@ -1,6 +1,8 @@
 name: release
 
+# 触发条件：手动触发 + 打版本标签自动触发（核心：实现自动发布）
 on:
+  # 手动触发（保留原有能力，可自定义版本号）
   workflow_dispatch:
     inputs:
       version:
@@ -15,6 +17,9 @@ on:
         description: 'Prerelease'
         required: false
         default: 'false'
+  # 自动触发：推送版本标签（如 v1.0.0）时自动执行
+  push:
+    tags: ['v*']
 
 jobs:
   build:
@@ -38,7 +43,7 @@ jobs:
       - name: Build
         run: pnpm package:release
 
-      - name: List Artifacts
+      - name: List Artifacts (调试用，确认产物存在)
         run: ls -R core/dist
 
       - name: Upload Windows
@@ -46,24 +51,28 @@ jobs:
         with:
           name: farm-win-x64
           path: ./core/dist/qq-farm-bot-win-x64.exe
+          if-no-files-found: error # 产物不存在时直接报错，便于排查
 
       - name: Upload Linux
         uses: actions/upload-artifact@v4
         with:
           name: farm-linux-x64
           path: ./core/dist/qq-farm-bot-linux-x64
+          if-no-files-found: error
 
       - name: Upload MacOS Intel
         uses: actions/upload-artifact@v4
         with:
           name: farm-mac-x64
           path: ./core/dist/qq-farm-bot-macos-x64
+          if-no-files-found: error
 
       - name: Upload MacOS Apple Silicon
         uses: actions/upload-artifact@v4
         with:
           name: farm-mac-arm64
           path: ./core/dist/qq-farm-bot-macos-arm64
+          if-no-files-found: error
 
   Release:
     runs-on: ubuntu-latest
@@ -72,21 +81,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      # 下载所有上传的产物（默认下载到当前目录，而非artifacts子目录）
       - uses: actions/download-artifact@v4
 
+      # 修复：查看下载后的文件结构（去掉artifacts，直接看当前目录）
       - name: Display structure of downloaded files
-        run: ls -R artifacts
+        run: ls -R .
 
       - name: Release
         uses: ncipollo/release-action@v1
         with:
-          name: ${{ github.event.inputs.version }}
-          tag: ${{ github.event.inputs.version }}
-          body: ${{ github.event.inputs.version }}
+          # 自动触发时用标签名作为版本，手动触发时用输入的版本
+          name: ${{ github.event.inputs.version || github.ref_name }}
+          tag: ${{ github.event.inputs.version || github.ref_name }}
+          body: |
+            ## ${{ github.event.inputs.version || github.ref_name }}
+            自动构建发布，包含多平台产物：
+            - Windows x64
+            - Linux x64
+            - MacOS Intel (x64)
+            - MacOS Apple Silicon (arm64)
           token: ${{ secrets.GITHUB_TOKEN }}
-          makeLatest: ${{ github.event.inputs.latest }}
-          prerelease: ${{ github.event.inputs.prerelease }}
+          makeLatest: ${{ github.event.inputs.latest || 'true' }}
+          prerelease: ${{ github.event.inputs.prerelease || 'false' }}
           allowUpdates: true
+          # 产物路径：下载后直接在当前目录的对应文件夹下，路径正确
           artifacts: >
             farm-win-x64/qq-farm-bot-win-x64.exe,
             farm-linux-x64/qq-farm-bot-linux-x64,

@@ -6,6 +6,8 @@
 
 [Discord](https://discord.gg/suya45TU)
 
+[下载傻瓜式exe](https://github.com/rpvvn/qq-farm-bot-ui/releases)
+
 ## 技术栈
 
 **后端**

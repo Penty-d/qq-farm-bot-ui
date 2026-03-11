@@ -352,18 +352,23 @@ function handleNotify(msg) {
     }
 }
 
+function buildDeviceInfo() {
+    const cfg = (CONFIG.device_info && typeof CONFIG.device_info === 'object') ? CONFIG.device_info : {};
+    return {
+        client_version: String(CONFIG.clientVersion || cfg.client_version || ''),
+        sys_software: String(cfg.sys_software || 'iOS 26.2.1'),
+        network: String(cfg.network || 'wifi'),
+        memory: String(cfg.memory || '7672'),
+        device_id: String(cfg.device_id || 'iPhone X<iPhone18,3>'),
+    };
+}
+
 // ============ 登录 ============
 function sendLogin(onLoginSuccess) {
     const body = types.LoginRequest.encode(types.LoginRequest.create({
         sharer_id: toLong(0),
         sharer_open_id: '',
-        device_info: {
-            client_version: CONFIG.clientVersion,
-            sys_software: 'iOS 26.2.1',
-            network: 'wifi',
-            memory: '7672',
-            device_id: 'iPhone X<iPhone18,3>',
-        },
+        device_info: buildDeviceInfo(),
         share_cfg_id: toLong(0),
         scene_id: '1256',
         report_data: {
@@ -471,7 +476,7 @@ let savedCode = null;
 function connect(code, onLoginSuccess) {
     savedLoginCallback = onLoginSuccess;
     if (code) savedCode = code;
-    const url = `${CONFIG.serverUrl}?platform=${CONFIG.platform}&os=${CONFIG.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=`;
+    const url = `${CONFIG.serverUrl}?platform=${encodeURIComponent(CONFIG.platform)}&os=${encodeURIComponent(CONFIG.os)}&ver=${encodeURIComponent(CONFIG.clientVersion)}&code=${encodeURIComponent(savedCode)}&openID=`;
 
     ws = new WebSocket(url, {
         headers: {

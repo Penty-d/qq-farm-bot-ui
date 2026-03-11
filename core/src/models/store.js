@@ -4,6 +4,7 @@ const process = require('node:process');
  */
 
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
+const { CONFIG: BASE_CONFIG } = require('../config/config');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
 
 const STORE_FILE = getDataFile('store.json');
@@ -36,6 +37,18 @@ const DEFAULT_OFFLINE_REMINDER = {
 
 const DEFAULT_QR_LOGIN = {
     apiDomain: 'q.qq.com',
+};
+
+const DEFAULT_RUNTIME_CLIENT = {
+    serverUrl: BASE_CONFIG.serverUrl,
+    clientVersion: BASE_CONFIG.clientVersion,
+    os: BASE_CONFIG.os,
+    device_info: {
+        sys_software: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.sys_software) ? BASE_CONFIG.device_info.sys_software : 'iOS 26.2.1',
+        network: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.network) ? BASE_CONFIG.device_info.network : 'wifi',
+        memory: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.memory) ? BASE_CONFIG.device_info.memory : '7672',
+        device_id: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.device_id) ? BASE_CONFIG.device_info.device_id : 'iPhone X<iPhone18,3>',
+    },
 };
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
@@ -107,6 +120,7 @@ const globalConfig = {
     },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     qrLogin: { ...DEFAULT_QR_LOGIN },
+    runtimeClient: { ...DEFAULT_RUNTIME_CLIENT, device_info: { ...DEFAULT_RUNTIME_CLIENT.device_info } },
     adminPasswordHash: '',
 };
 
@@ -187,6 +201,109 @@ function normalizeQrLoginConfig(input) {
     return {
         apiDomain: normalizeApiDomain(src.apiDomain, DEFAULT_QR_LOGIN.apiDomain),
     };
+}
+
+function normalizeRuntimeClientVersion(input, fallback = DEFAULT_RUNTIME_CLIENT.clientVersion) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    if (raw.length > 64) return fallback;
+    if (!/^[\w.-]+$/.test(raw)) return fallback;
+    return raw;
+}
+
+function normalizeRuntimeClientOs(input, fallback = DEFAULT_RUNTIME_CLIENT.os) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    if (raw.length > 16) return fallback;
+    if (!/^[\w.-]+$/.test(raw)) return fallback;
+    return raw;
+}
+
+function normalizeRuntimeClientServerUrl(input, fallback = DEFAULT_RUNTIME_CLIENT.serverUrl) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    // serverUrl 需要是 base url，query 由 network.connect() 追加
+    if (raw.includes('?') || raw.includes('#')) return fallback;
+    try {
+        const parsed = new URL(raw);
+        const protocol = String(parsed.protocol || '').toLowerCase();
+        if (protocol !== 'ws:' && protocol !== 'wss:') return fallback;
+        return parsed.toString().replace(/\/$/, '');
+    } catch {
+        return fallback;
+    }
+}
+
+function normalizeRuntimeClientDeviceInfo(input, fallback = DEFAULT_RUNTIME_CLIENT.device_info) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_RUNTIME_CLIENT.device_info;
+    const toStr = (v, d, maxLen = 200) => {
+        const s = String(v !== undefined && v !== null ? v : d).trim();
+        if (!s) return String(d || '').trim();
+        return s.length > maxLen ? s.slice(0, maxLen) : s;
+    };
+    return {
+        sys_software: toStr(src.sys_software, base.sys_software, 100),
+        network: toStr(src.network, base.network, 32),
+        memory: toStr(src.memory, base.memory, 32),
+        device_id: toStr(src.device_id, base.device_id, 120),
+    };
+}
+
+function normalizeRuntimeClientConfig(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const current = normalizeRuntimeClientConfig.current || DEFAULT_RUNTIME_CLIENT;
+    const fallback = (current && typeof current === 'object') ? current : DEFAULT_RUNTIME_CLIENT;
+    const baseDevice = (fallback.device_info && typeof fallback.device_info === 'object')
+        ? fallback.device_info
+        : DEFAULT_RUNTIME_CLIENT.device_info;
+
+    const next = {
+        serverUrl: normalizeRuntimeClientServerUrl(src.serverUrl, fallback.serverUrl),
+        clientVersion: normalizeRuntimeClientVersion(src.clientVersion, fallback.clientVersion),
+        os: normalizeRuntimeClientOs(src.os, fallback.os),
+        device_info: normalizeRuntimeClientDeviceInfo(src.device_info, baseDevice),
+    };
+    return next;
+}
+
+function getRuntimeClientConfig() {
+    const current = globalConfig.runtimeClient || DEFAULT_RUNTIME_CLIENT;
+    // 提供当前值作为 normalize fallback
+    normalizeRuntimeClientConfig.current = current;
+    const normalized = normalizeRuntimeClientConfig(current);
+    delete normalizeRuntimeClientConfig.current;
+    // device_info.client_version 永远由 clientVersion 派生
+    return {
+        ...normalized,
+        device_info: {
+            ...normalized.device_info,
+            client_version: normalized.clientVersion,
+        },
+    };
+}
+
+function setRuntimeClientConfig(cfg) {
+    const current = getRuntimeClientConfig();
+    const incoming = (cfg && typeof cfg === 'object') ? cfg : {};
+    const merged = {
+        ...current,
+        ...incoming,
+        device_info: {
+            ...(current.device_info || {}),
+            ...((incoming.device_info && typeof incoming.device_info === 'object') ? incoming.device_info : {}),
+        },
+    };
+    // normalize 时使用 merged 作为 fallback
+    normalizeRuntimeClientConfig.current = merged;
+    const normalized = normalizeRuntimeClientConfig(merged);
+    delete normalizeRuntimeClientConfig.current;
+    globalConfig.runtimeClient = {
+        ...normalized,
+        device_info: { ...normalized.device_info },
+    };
+    saveGlobalConfig();
+    return getRuntimeClientConfig();
 }
 function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
     const source = Array.isArray(input) ? input : fallback;
@@ -439,6 +556,18 @@ function loadGlobalConfig() {
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
             globalConfig.offlineReminder = normalizeOfflineReminder(data.offlineReminder);
             globalConfig.qrLogin = normalizeQrLoginConfig(data.qrLogin);
+            if (data.runtimeClient && typeof data.runtimeClient === 'object') {
+                // normalize 时使用当前 default 作为 fallback
+                normalizeRuntimeClientConfig.current = DEFAULT_RUNTIME_CLIENT;
+                const normalized = normalizeRuntimeClientConfig(data.runtimeClient);
+                delete normalizeRuntimeClientConfig.current;
+                globalConfig.runtimeClient = {
+                    ...normalized,
+                    device_info: { ...(normalized.device_info || {}) },
+                };
+            } else {
+                globalConfig.runtimeClient = { ...DEFAULT_RUNTIME_CLIENT, device_info: { ...DEFAULT_RUNTIME_CLIENT.device_info } };
+            }
             if (typeof data.adminPasswordHash === 'string') {
                 globalConfig.adminPasswordHash = data.adminPasswordHash;
             }
@@ -464,6 +593,13 @@ function sanitizeGlobalConfigBeforeSave() {
         nextMap[sid] = normalizeAccountConfig(cfg, accountFallbackConfig);
     }
     globalConfig.accountConfigs = nextMap;
+
+    // runtimeClient 白名单净化
+    globalConfig.runtimeClient = {
+        ...getRuntimeClientConfig(),
+        // 存盘时不强制写入 client_version（登录时派生即可），避免重复字段
+        device_info: { ...getRuntimeClientConfig().device_info },
+    };
 }
 
 // 保存全局配置
@@ -515,6 +651,7 @@ function getConfigSnapshot(accountId) {
         friendBlacklist: [...(cfg.friendBlacklist || [])],
         ui: { ...globalConfig.ui },
         qrLogin: normalizeQrLoginConfig(globalConfig.qrLogin),
+        runtimeClient: getRuntimeClientConfig(),
     };
 }
 
@@ -819,6 +956,8 @@ module.exports = {
     setOfflineReminder,
     getQrLoginConfig,
     setQrLoginConfig,
+    getRuntimeClientConfig,
+    setRuntimeClientConfig,
     getAccounts,
     addOrUpdateAccount,
     deleteAccount,

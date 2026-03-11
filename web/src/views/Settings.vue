@@ -11,10 +11,12 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
+import { useToastStore } from '@/stores/toast'
 
 const settingStore = useSettingStore()
 const accountStore = useAccountStore()
 const farmStore = useFarmStore()
+const toast = useToastStore()
 
 const { settings, loading } = storeToRefs(settingStore)
 const { currentAccountId, accounts } = storeToRefs(accountStore)
@@ -25,6 +27,19 @@ const passwordSaving = ref(false)
 const offlineSaving = ref(false)
 const offlineTesting = ref(false)
 const qrSaving = ref(false)
+const runtimeClientSaving = ref(false)
+
+const token = computed(() => {
+  return localStorage.getItem('admin_token') || '未登录'
+})
+
+const copyToClipboard = (text: string) => {
+  navigator.clipboard.writeText(text).then(() => {
+    toast.success('复制成功')
+  }).catch(() => {
+    toast.error('复制失败，请手动复制')
+  })
+}
 
 const modalVisible = ref(false)
 const modalConfig = ref({
@@ -369,6 +384,18 @@ const localQrLogin = ref({
   apiDomain: 'q.qq.com',
 })
 
+const localRuntimeClient = ref({
+  serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
+  clientVersion: '1.6.2.18_20260227',
+  os: 'iOS',
+  device_info: {
+    sys_software: 'iOS 26.2.1',
+    network: 'wifi',
+    memory: '7672',
+    device_id: 'iPhone X<iPhone18,3>',
+  },
+})
+
 const passwordForm = ref({
   old: '',
   new: '',
@@ -467,6 +494,9 @@ function syncLocalSettings() {
     localOffline.value.offlineDeleteEnabled = !!localOffline.value.offlineDeleteEnabled
     if (settings.value.qrLogin) {
       localQrLogin.value = JSON.parse(JSON.stringify(settings.value.qrLogin))
+    }
+    if (settings.value.runtimeClient) {
+      localRuntimeClient.value = JSON.parse(JSON.stringify(settings.value.runtimeClient))
     }
   }
 }
@@ -815,6 +845,22 @@ async function handleSaveQrLogin() {
     qrSaving.value = false
   }
 }
+async function handleSaveRuntimeClient() {
+  runtimeClientSaving.value = true
+  try {
+    const res = await settingStore.saveRuntimeClientConfig(localRuntimeClient.value as any)
+    if (res.ok) {
+      showAlert('运行时连接配置已保存，运行中账号将自动重连生效')
+    }
+    else {
+      showAlert(`保存失败: ${res.error || '未知错误'}`, 'danger')
+    }
+  }
+  finally {
+    runtimeClientSaving.value = false
+  }
+}
+
 async function handleSaveOffline() {
   localOffline.value.offlineDeleteSec = Math.max(1, Number.parseInt(String(localOffline.value.offlineDeleteSec), 10) || 1)
   localOffline.value.offlineDeleteEnabled = !!localOffline.value.offlineDeleteEnabled
@@ -864,6 +910,8 @@ async function handleTestOffline() {
     </div>
 
     <div v-else class="grid grid-cols-1 mt-12 gap-4 text-sm lg:grid-cols-2">
+
+
       <!-- Card 1: Strategy & Automation -->
       <div v-if="currentAccountId" class="card h-full flex flex-col rounded-lg bg-white shadow dark:bg-gray-800">
         <!-- Strategy Header -->
@@ -1320,6 +1368,83 @@ async function handleTestOffline() {
         <!-- QR Login Header -->
         <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
+            <div class="i-carbon-connection-signal" />
+            运行时连接配置
+          </h3>
+        </div>
+
+        <!-- Runtime Client Content -->
+        <div class="p-4 space-y-3">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <BaseInput
+              v-model="localRuntimeClient.serverUrl"
+              label="服务器 WS 地址"
+              type="text"
+              placeholder="wss://.../ws"
+            />
+            <BaseInput
+              v-model="localRuntimeClient.clientVersion"
+              label="游戏版本号"
+              type="text"
+              placeholder="例如: 1.6.2.18_20260227"
+            />
+          </div>
+
+          <BaseSelect
+            v-model="localRuntimeClient.os"
+            label="系统 (os)"
+            :options="[{ label: 'iOS', value: 'iOS' }, { label: 'Android', value: 'Android' }]"
+          />
+
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <BaseInput
+              v-model="localRuntimeClient.device_info.sys_software"
+              label="系统版本号"
+              type="text"
+              placeholder="例如: iOS 26.2.1"
+            />
+            <BaseInput
+              v-model="localRuntimeClient.device_info.network"
+              label="网络类型"
+              type="text"
+              placeholder="例如: wifi"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <BaseInput
+              v-model="localRuntimeClient.device_info.memory"
+              label="内存大小（单位MB）"
+              type="text"
+              placeholder="例如: 7672"
+            />
+            <BaseInput
+              v-model="localRuntimeClient.device_info.device_id"
+              label="设备ID"
+              type="text"
+              placeholder="例如: iPhone X<iPhone18,3>"
+            />
+          </div>
+
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            保存后，运行中的账号会自动重连以生效。
+          </p>
+
+          <div class="flex justify-end">
+            <BaseButton
+              variant="primary"
+              size="sm"
+              :loading="runtimeClientSaving"
+              @click="handleSaveRuntimeClient"
+            >
+              保存运行时连接配置
+            </BaseButton>
+          </div>
+        </div>
+
+        <!-- QR Login Header -->
+        <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+          <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
             <div class="i-carbon-qr-code" />
             二维码登录接口
           </h3>
@@ -1348,7 +1473,7 @@ async function handleTestOffline() {
           </div>
         </div>
         <!-- Offline Header -->
-        <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+        <div class="border-b bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
             <div class="i-carbon-notification" />
             下线提醒
@@ -1438,28 +1563,60 @@ async function handleTestOffline() {
               placeholder="例如: { &quot;title&quot;: &quot;{{title}}&quot;, &quot;message&quot;: &quot;{{content}}&quot; }"
             />
           </template>
+
+          <!-- Save Offline Button -->
+          <div class="flex justify-end gap-2 pt-3">
+            <BaseButton
+              variant="secondary"
+              size="sm"
+              :loading="offlineTesting"
+              :disabled="offlineSaving"
+              @click="handleTestOffline"
+            >
+              测试通知
+            </BaseButton>
+            <BaseButton
+              variant="primary"
+              size="sm"
+              :loading="offlineSaving"
+              :disabled="offlineTesting"
+              @click="handleSaveOffline"
+            >
+              保存下线提醒设置
+            </BaseButton>
+          </div>
         </div>
 
-        <!-- Save Offline Button -->
-        <div class="mt-auto flex justify-end gap-2 border-t bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
-          <BaseButton
-            variant="secondary"
-            size="sm"
-            :loading="offlineTesting"
-            :disabled="offlineSaving"
-            @click="handleTestOffline"
-          >
-            测试通知
-          </BaseButton>
-          <BaseButton
-            variant="primary"
-            size="sm"
-            :loading="offlineSaving"
-            :disabled="offlineTesting"
-            @click="handleSaveOffline"
-          >
-            保存下线提醒设置
-          </BaseButton>
+        <!-- Token Info Header -->
+        <div class="border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+          <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
+            <div class="i-carbon-code" />
+            请求参数信息
+          </h3>
+        </div>
+
+        <!-- Token Info Content -->
+        <div class="p-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              :value="token"
+              readonly
+              class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            />
+            <BaseButton
+              v-if="token !== '未登录'"
+              variant="secondary"
+              size="sm"
+              @click="copyToClipboard(token)"
+            >
+              <div class="i-carbon-copy mr-1"></div>
+              复制
+            </BaseButton>
+          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            x-admin-token 用于API请求认证，复制后可用于第三方工具调用接口。
+          </p>
         </div>
       </div>
     </div>

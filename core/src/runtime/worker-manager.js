@@ -18,6 +18,8 @@ function createWorkerManager(options) {
         triggerOfflineReminder,
         addOrUpdateAccount,
         deleteAccount,
+        upsertFriendBlacklist,
+        broadcastConfigToWorkers,
         onStatusSync,
         onWorkerLog,
     } = options;
@@ -298,6 +300,16 @@ function createWorkerManager(options) {
             });
             addAccountLog('kickout_stop', `账号 ${worker.name} 被踢下线，已自动停止`, accountId, worker.name, { reason });
             stopWorker(accountId);
+        } else if (msg.type === 'friend_blacklist_add') {
+            const gid = Number(msg.gid);
+            if (!Number.isFinite(gid) || gid <= 0) return;
+            if (typeof upsertFriendBlacklist !== 'function') return;
+            try {
+                const changed = !!upsertFriendBlacklist(accountId, gid);
+                if (changed && typeof broadcastConfigToWorkers === 'function') {
+                    broadcastConfigToWorkers(accountId);
+                }
+            } catch {}
         } else if (msg.type === 'api_response') {
             const { id, result, error } = msg;
             managerScheduler.clear(`api_timeout_${accountId}_${id}`);

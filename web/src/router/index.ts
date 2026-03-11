@@ -26,10 +26,10 @@ async function ensureTokenValid() {
     headers: { 'x-admin-token': token },
     timeout: 6000,
   }).then((res) => {
-    const ok = !!(res.data && res.data.ok)
-    if (ok)
+    const valid = !!(res.data && res.data.ok && res.data.data && res.data.data.valid)
+    if (valid)
       validatedToken = token
-    return ok
+    return valid
   }).catch(() => false).finally(() => {
     validatingPromise = null
   })

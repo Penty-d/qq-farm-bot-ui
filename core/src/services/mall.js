@@ -7,6 +7,7 @@ const { Buffer } = require('node:buffer');
 const { sendMsgAsync, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toNum, log, sleep } = require('../utils/utils');
+const { getDateKey, createDailyCooldown } = require('./common');
 
 const ORGANIC_FERTILIZER_MALL_GOODS_ID = 1002;
 const BUY_COOLDOWN_MS = 10 * 60 * 1000;
@@ -20,15 +21,8 @@ let buyLastSuccessAt = 0;
 let buyPausedNoGoldDateKey = '';
 let freeGiftDoneDateKey = '';
 let freeGiftLastAt = 0;
-let freeGiftLastCheckAt = 0;
 
-function getDateKey() {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
+const freeGiftCooldown = createDailyCooldown({ cooldownMs: BUY_COOLDOWN_MS });
 
 async function getMallListBySlotType(slotType = 1) {
     const body = types.GetMallListBySlotTypeRequest.encode(types.GetMallListBySlotTypeRequest.create({
@@ -159,15 +153,8 @@ async function autoBuyOrganicFertilizer(force = false) {
     }
 }
 
-function isDoneTodayByKey(key) {
-    return String(key || '') === getDateKey();
-}
-
 async function buyFreeGifts(force = false) {
-    const now = Date.now();
-    if (!force && isDoneTodayByKey(freeGiftDoneDateKey)) return 0;
-    if (!force && now - freeGiftLastCheckAt < BUY_COOLDOWN_MS) return 0;
-    freeGiftLastCheckAt = now;
+    if (!freeGiftCooldown.canRun(force)) return 0;
 
     try {
         const mall = await getMallListBySlotType(1);
@@ -183,6 +170,7 @@ async function buyFreeGifts(force = false) {
         const free = goods.filter((g) => !!g && g.is_free === true && Number(g.goods_id || 0) > 0);
         if (!free.length) {
             freeGiftDoneDateKey = getDateKey();
+            freeGiftCooldown.markRan();
             log('商城', '今日暂无可领取免费礼包', {
                 module: 'task',
                 event: FREE_GIFTS_DAILY_KEY,
@@ -203,6 +191,7 @@ async function buyFreeGifts(force = false) {
         freeGiftDoneDateKey = getDateKey();
         if (bought > 0) {
             freeGiftLastAt = Date.now();
+            freeGiftCooldown.markRan();
             log('商城', `自动购买免费礼包 x${bought}`, {
                 module: 'task',
                 event: FREE_GIFTS_DAILY_KEY,
@@ -210,6 +199,7 @@ async function buyFreeGifts(force = false) {
                 count: bought,
             });
         } else {
+            freeGiftCooldown.markRan();
             log('商城', '本次未成功领取免费礼包', {
                 module: 'task',
                 event: FREE_GIFTS_DAILY_KEY,
@@ -239,7 +229,7 @@ module.exports = {
     getFreeGiftDailyState: () => ({
         key: FREE_GIFTS_DAILY_KEY,
         doneToday: freeGiftDoneDateKey === getDateKey(),
-        lastCheckAt: freeGiftLastCheckAt,
+        ...freeGiftCooldown.getState(),
         lastClaimAt: freeGiftLastAt,
     }),
 };

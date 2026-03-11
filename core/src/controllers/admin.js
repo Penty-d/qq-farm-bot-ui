@@ -18,9 +18,17 @@ const { addOrUpdateAccount, deleteAccount } = store;
 const { findAccountByRef, normalizeAccountRef, resolveAccountId } = require('../services/account-resolver');
 const { createModuleLogger } = require('../services/logger');
 const { MiniProgramLoginSession } = require('../services/qrlogin');
+const { sendPushooMessage } = require('../services/push');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
+const { 
+    hashPassword: secureHash, 
+    verifyPassword,
+    rateLimitMiddleware,
+    recordLoginAttempts,
+    clearLoginAttempts
+} = require('../services/security');
 
-const hashPassword = (pwd) => crypto.createHash('sha256').update(String(pwd || '')).digest('hex');
+const hashPassword = (pwd) => secureHash(pwd); // 兼容旧接口
 const adminLogger = createModuleLogger('admin');
 
 let app = null;
@@ -79,6 +87,13 @@ function startAdminServer(dataProvider) {
         next();
     });
 
+    // 速率限制中间件
+    app.use('/api', rateLimitMiddleware({
+        windowMs: 60000,  // 1分钟
+        maxRequests: 100, // 最多100次
+        keyGenerator: (req) => req.ip,
+    }));
+
     const webDist = path.join(__dirname, '../../../web/dist');
     if (fs.existsSync(webDist)) {
         app.use(express.static(webDist));
@@ -89,30 +104,45 @@ function startAdminServer(dataProvider) {
     app.use('/game-config', express.static(getResourcePath('gameConfig')));
 
     // 登录与鉴权
-    app.post('/api/login', (req, res) => {
+    app.post('/api/login', async (req, res) => {
         const { password } = req.body || {};
+        
+        // 记录登录尝试
+        try {
+            recordLoginAttempts(req.ip);
+        } catch (error) {
+            return res.status(429).json({ ok: false, error: error.message });
+        }
+        
         const input = String(password || '');
         const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
         let ok = false;
+        
         if (storedHash) {
-            ok = hashPassword(input) === storedHash;
+            // 优先使用安全验证 (支持PBKDF2和SHA256)
+            ok = await verifyPassword(input, storedHash);
         } else {
+            // 兼容旧配置
             ok = input === String(CONFIG.adminPassword || '');
         }
+        
         if (!ok) {
             return res.status(401).json({ ok: false, error: 'Invalid password' });
         }
+        
+        // 登录成功
+        clearLoginAttempts(req.ip);
         const token = issueToken();
         tokens.add(token);
         res.json({ ok: true, data: { token } });
     });
 
     app.use('/api', (req, res, next) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check') return next();
+        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/auth/validate') return next();
         return authRequired(req, res, next);
     });
 
-    app.post('/api/admin/change-password', (req, res) => {
+    app.post('/api/admin/change-password', async (req, res) => {
         const body = req.body || {};
         const oldPassword = String(body.oldPassword || '');
         const newPassword = String(body.newPassword || '');
@@ -121,12 +151,12 @@ function startAdminServer(dataProvider) {
         }
         const storedHash = store.getAdminPasswordHash ? store.getAdminPasswordHash() : '';
         const ok = storedHash
-            ? hashPassword(oldPassword) === storedHash
+            ? await verifyPassword(oldPassword, storedHash)
             : oldPassword === String(CONFIG.adminPassword || '');
         if (!ok) {
             return res.status(400).json({ ok: false, error: '原密码错误' });
         }
-        const nextHash = hashPassword(newPassword);
+        const nextHash = await hashPassword(newPassword);
         if (store.setAdminPasswordHash) {
             store.setAdminPasswordHash(nextHash);
         }
@@ -138,6 +168,11 @@ function startAdminServer(dataProvider) {
     });
 
     app.get('/api/auth/validate', (req, res) => {
+        const token = String(req.headers['x-admin-token'] || '').trim();
+        const valid = !!token && tokens.has(token);
+        if (!valid) {
+            return res.status(401).json({ ok: false, data: { valid: false }, error: 'Unauthorized' });
+        }
         res.json({ ok: true, data: { valid: true } });
     });
 
@@ -272,6 +307,17 @@ function startAdminServer(dataProvider) {
     });
 
     // API: 好友农田详情
+    app.get('/api/interact-records', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const data = await provider.getInteractRecords(id);
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     app.get('/api/friend/:gid/lands', async (req, res) => {
         const id = getAccId(req);
         if (!id) return res.status(400).json({ ok: false });
@@ -297,11 +343,19 @@ function startAdminServer(dataProvider) {
     });
 
     // API: 好友黑名单
-    app.get('/api/friend-blacklist', (req, res) => {
+    app.get('/api/friend-blacklist', async (req, res) => {
         const id = getAccId(req);
         if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
-        const list = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
-        res.json({ ok: true, data: list });
+        try {
+            if (provider && typeof provider.getFriendBlacklist === 'function') {
+                const list = await provider.getFriendBlacklist(id);
+                return res.json({ ok: true, data: Array.isArray(list) ? list : [] });
+            }
+            const list = store.getFriendBlacklist ? store.getFriendBlacklist(id) : [];
+            return res.json({ ok: true, data: Array.isArray(list) ? list : [] });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
     });
 
     app.post('/api/friend-blacklist/toggle', (req, res) => {
@@ -324,6 +378,88 @@ function startAdminServer(dataProvider) {
         res.json({ ok: true, data: saved });
     });
 
+    // API: 好友缓存
+    app.get('/api/friend-cache', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const list = store.getFriendCache ? store.getFriendCache(id) : [];
+            return res.json({ ok: true, data: Array.isArray(list) ? list : [] });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/friend-cache/update-from-visitors', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const friends = await provider.extractFriendsFromInteractRecords(id);
+            if (!Array.isArray(friends) || friends.length === 0) {
+                return res.json({ ok: true, data: store.getFriendCache ? store.getFriendCache(id) : [], message: '没有找到新的访客记录' });
+            }
+            const saved = store.updateFriendCache ? store.updateFriendCache(id, friends) : friends;
+            if (provider && typeof provider.broadcastConfig === 'function') {
+                provider.broadcastConfig(id);
+            }
+            return res.json({ ok: true, data: saved, message: '更新成功' });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/friend-cache/import-gids', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const input = req.body.gids;
+            let gids = [];
+            if (typeof input === 'string') {
+                gids = input.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+            } else if (Array.isArray(input)) {
+                gids = input;
+            }
+            const validGids = gids
+                .map(g => Number(g))
+                .filter(g => Number.isFinite(g) && g > 0);
+            if (validGids.length === 0) {
+                return res.json({ ok: false, error: '没有有效的 GID' });
+            }
+            const friends = validGids.map(gid => ({
+                gid,
+                nick: `GID:${gid}`,
+                avatarUrl: '',
+            }));
+            const saved = store.updateFriendCache ? store.updateFriendCache(id, friends) : friends;
+            if (provider && typeof provider.broadcastConfig === 'function') {
+                provider.broadcastConfig(id);
+            }
+            return res.json({ ok: true, data: saved, message: `已导入 ${validGids.length} 个 GID` });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.delete('/api/friend-cache/:gid', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        const gid = Number(req.params.gid);
+        if (!gid || !Number.isFinite(gid)) {
+            return res.status(400).json({ ok: false, error: '无效的 GID' });
+        }
+        try {
+            const current = store.getFriendCache ? store.getFriendCache(id) : [];
+            const next = current.filter(f => f.gid !== gid);
+            const saved = store.setFriendCache ? store.setFriendCache(id, next) : next;
+            if (provider && typeof provider.broadcastConfig === 'function') {
+                provider.broadcastConfig(id);
+            }
+            return res.json({ ok: true, data: saved, message: `已删除 GID:${gid}` });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
     // API: 种子列表
     app.get('/api/seeds', async (req, res) => {
         const id = getAccId(req);
@@ -342,6 +478,18 @@ function startAdminServer(dataProvider) {
         if (!id) return res.status(400).json({ ok: false });
         try {
             const data = await provider.getBag(id);
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
+    // API: 背包种子列表
+    app.get('/api/bag/seeds', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false });
+        try {
+            const data = await provider.getBagSeeds(id);
             res.json({ ok: true, data });
         } catch (e) {
             handleApiError(res, e);
@@ -447,6 +595,77 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 保存二维码登录接口配置
+    app.post('/api/settings/qr-login', async (req, res) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const data = store.setQrLoginConfig ? store.setQrLoginConfig(body) : { apiDomain: 'q.qq.com' };
+            res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+    // API: 保存运行时连接/设备配置
+    app.post('/api/settings/runtime-client', async (req, res) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            if (provider && typeof provider.setRuntimeClientConfig === 'function') {
+                const data = await provider.setRuntimeClientConfig(body);
+                return res.json({ ok: true, data: data || {} });
+            }
+            const saved = store.setRuntimeClientConfig ? store.setRuntimeClientConfig(body) : null;
+            if (provider && typeof provider.broadcastConfig === 'function') {
+                provider.broadcastConfig('');
+            }
+            return res.json({ ok: true, data: { runtimeClient: saved } });
+        } catch (e) {
+            return res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 测试下线提醒推送（不落盘）
+    app.post('/api/settings/offline-reminder/test', async (req, res) => {
+        try {
+            const saved = store.getOfflineReminder ? store.getOfflineReminder() : {};
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const cfg = { ...(saved || {}), ...body };
+
+            const channel = String(cfg.channel || '').trim().toLowerCase();
+            const endpoint = String(cfg.endpoint || '').trim();
+            const token = String(cfg.token || '').trim();
+            const titleBase = String(cfg.title || '账号下线提醒').trim();
+            const msgBase = String(cfg.msg || '账号下线').trim();
+            const custom_headers = String(cfg.custom_headers || '').trim();
+            const custom_body = String(cfg.custom_body || '').trim();
+
+            if (!channel) {
+                return res.status(400).json({ ok: false, error: '推送渠道不能为空' });
+            }
+            if ((channel === 'webhook' || channel === 'custom_request') && !endpoint) {
+                return res.status(400).json({ ok: false, error: '接口地址不能为空' });
+            }
+
+            const now = new Date();
+            const ts = now.toISOString().replace('T', ' ').slice(0, 19);
+            const ret = await sendPushooMessage({
+                channel,
+                endpoint,
+                token,
+                title: `${titleBase}（测试）`,
+                content: `${msgBase}\n\n这是一条下线提醒测试消息。\n时间: ${ts}`,
+                custom_headers,
+                custom_body,
+            });
+
+            if (!ret || !ret.ok) {
+                return res.status(400).json({ ok: false, error: (ret && ret.msg) || '推送失败', data: ret || {} });
+            }
+            return res.json({ ok: true, data: ret });
+        } catch (e) {
+            return res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     // API: 获取配置
     app.get('/api/settings', async (req, res) => {
         try {
@@ -455,13 +674,20 @@ function startAdminServer(dataProvider) {
             const intervals = store.getIntervals(id);
             const strategy = store.getPlantingStrategy(id);
             const preferredSeed = store.getPreferredSeed(id);
+            const bagSeedPriority = store.getBagSeedPriority(id);
             const friendQuietHours = store.getFriendQuietHours(id);
             const automation = store.getAutomation(id);
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
-                : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 120 };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder } });
+                : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 1, offlineDeleteEnabled: false, custom_headers: '', custom_body: '' };
+            const qrLogin = store.getQrLoginConfig
+                ? store.getQrLoginConfig()
+                : { apiDomain: 'q.qq.com' };
+            const runtimeClient = store.getRuntimeClientConfig
+                ? store.getRuntimeClientConfig()
+                : null;
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
@@ -604,11 +830,40 @@ function startAdminServer(dataProvider) {
         res.json({ ok: true, data: list });
     });
 
+    // API: 清空当前账号运行日志
+    app.delete('/api/logs', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        try {
+            const data = provider.clearLogs(id);
+
+            if (io && provider && typeof provider.getLogs === 'function') {
+                const accountLogs = provider.getLogs(id, { limit: 100 });
+                io.to(`account:${id}`).emit('logs:snapshot', {
+                    accountId: id,
+                    logs: Array.isArray(accountLogs) ? accountLogs : [],
+                });
+
+                const allLogs = provider.getLogs('', { limit: 100 });
+                io.to('account:all').emit('logs:snapshot', {
+                    accountId: 'all',
+                    logs: Array.isArray(allLogs) ? allLogs : [],
+                });
+            }
+
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     // ============ QR Code Login APIs (无需账号选择) ============
     // 这些接口不需要 authRequired 也能调用（用于登录流程）
     app.post('/api/qr/create', async (req, res) => {
         try {
-            const result = await MiniProgramLoginSession.requestLoginCode();
+            const qrLogin = store.getQrLoginConfig ? store.getQrLoginConfig() : { apiDomain: 'q.qq.com' };
+            const result = await MiniProgramLoginSession.requestLoginCode({ apiDomain: qrLogin.apiDomain });
             res.json({ ok: true, data: result });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -622,7 +877,8 @@ function startAdminServer(dataProvider) {
         }
 
         try {
-            const result = await MiniProgramLoginSession.queryStatus(code);
+            const qrLogin = store.getQrLoginConfig ? store.getQrLoginConfig() : { apiDomain: 'q.qq.com' };
+            const result = await MiniProgramLoginSession.queryStatus(code, { apiDomain: qrLogin.apiDomain });
 
             if (result.status === 'OK') {
                 const ticket = result.ticket;
@@ -630,7 +886,7 @@ function startAdminServer(dataProvider) {
                 const nickname = result.nickname || ''; // 获取昵称
                 const appid = '1112386029'; // Farm appid
 
-                const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid);
+                const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid, { apiDomain: qrLogin.apiDomain });
 
                 let avatar = '';
                 if (uin) {

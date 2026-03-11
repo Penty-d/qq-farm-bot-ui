@@ -250,6 +250,7 @@ function getPlantByFruitId(fruitId) {
  */
 function getAllSeeds() {
     return Array.from(seedToPlant.values()).map(p => ({
+        plantId: Number(p.id) || 0,
         seedId: p.seed_id,
         name: p.name,
         requiredLevel: Number(p.land_level_need) || 0,
@@ -258,8 +259,22 @@ function getAllSeeds() {
     }));
 }
 
+function getMappedSeedImage(targetId) {
+    const id = Number(targetId) || 0;
+    if (id <= 0) return '';
+
+    const direct = seedImageMap.get(id);
+    if (direct) return direct;
+
+    const item = itemInfoMap.get(id);
+    const assetName = item && item.asset_name ? String(item.asset_name).trim() : '';
+    if (!assetName) return '';
+
+    return seedAssetImageMap.get(assetName) || '';
+}
+
 function getSeedImageBySeedId(seedId) {
-    return seedImageMap.get(Number(seedId) || 0) || '';
+    return getMappedSeedImage(seedId);
 }
 
 function getItemImageById(itemId) {

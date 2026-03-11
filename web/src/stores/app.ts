@@ -1,12 +1,13 @@
+import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import api from '@/api'
 
-const THEME_KEY = 'ui_theme'
+const theme_key = useStorage('ui_theme', 'dark')
 
 export const useAppStore = defineStore('app', () => {
   const sidebarOpen = ref(false)
-  const isDark = ref(localStorage.getItem(THEME_KEY) === 'dark')
+  const isDark = ref(theme_key.value === 'dark')
 
   function toggleSidebar() {
     sidebarOpen.value = !sidebarOpen.value
@@ -26,7 +27,7 @@ export const useAppStore = defineStore('app', () => {
       if (res.data.ok && res.data.data.ui) {
         const theme = res.data.data.ui.theme
         isDark.value = theme === 'dark'
-        localStorage.setItem(THEME_KEY, theme)
+        theme_key.value = theme
       }
     }
     catch {
@@ -34,19 +35,19 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function setTheme(theme: 'dark' | 'light') {
+  async function setTheme(theme: 'light' | 'dark') {
     try {
       await api.post('/api/settings/theme', { theme })
-      isDark.value = theme === 'light'
-      localStorage.setItem(THEME_KEY, theme)
+      isDark.value = theme === 'dark'
+      theme_key.value = theme
     }
     catch (e) {
-      console.error('Failed to set theme:', e)
+      console.error('设置主题失败:', e)
     }
   }
 
   function toggleDark() {
-    const newTheme = isDark.value ? 'dark' : 'light'
+    const newTheme = isDark.value ? 'light' : 'dark'
     setTheme(newTheme)
   }
 

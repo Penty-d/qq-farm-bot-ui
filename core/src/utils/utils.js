@@ -16,7 +16,10 @@ function toLong(val) {
 }
 
 function toNum(val) {
-    if (Long.isLong(val)) return val.toNumber();
+    if (val && typeof val === 'object') {
+        if (Long.isLong(val)) return val.toNumber();
+        if (val.toNumber) return val.toNumber();
+    }
     return val || 0;
 }
 
@@ -117,7 +120,7 @@ function log(arg1, arg2, arg3 = null) {
     const displayTag = resolveModuleTag(safeMeta.module);
     coreLogger.info(msg, { tag: displayTag, ...safeMeta });
     if (logHook) {
-        try { logHook(displayTag, msg, false, safeMeta); } catch {}
+        try { logHook(displayTag, msg, false, safeMeta); } catch { }
     }
 }
 
@@ -128,7 +131,7 @@ function logWarn(arg1, arg2, arg3 = null) {
     const displayTag = resolveModuleTag(safeMeta.module);
     coreLogger.warn(msg, { tag: displayTag, ...safeMeta });
     if (logHook) {
-        try { logHook(displayTag, msg, true, safeMeta); } catch {}
+        try { logHook(displayTag, msg, true, safeMeta); } catch { }
     }
 }
 

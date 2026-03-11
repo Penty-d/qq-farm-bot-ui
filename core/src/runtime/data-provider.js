@@ -64,6 +64,26 @@ function createDataProvider(options) {
             const accId = String(accountId || '');
             return filterLogs(globalLogs.filter(l => String(l.accountId || '') === accId), opts).slice(-max);
         },
+        clearLogs: (accountRef) => {
+            const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) {
+                throw new Error('Missing x-account-id');
+            }
+            const accId = String(accountId || '');
+            let cleared = 0;
+            for (let i = globalLogs.length - 1; i >= 0; i -= 1) {
+                if (String((globalLogs[i] && globalLogs[i].accountId) || '') !== accId) continue;
+                globalLogs.splice(i, 1);
+                cleared += 1;
+            }
+
+            const worker = workers[accId];
+            if (worker && Array.isArray(worker.logs)) {
+                worker.logs.length = 0;
+            }
+
+            return { accountId: accId, cleared };
+        },
 
         getAccountLogs: (limit) => accountLogs.slice(-limit).reverse(),
         addAccountLog: (action, msg, accountId, accountName, extra) => addAccountLog(action, msg, accountId, accountName, extra),
@@ -71,9 +91,24 @@ function createDataProvider(options) {
         // 透传方法
         getLands: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getLands'),
         getFriends: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriends'),
+        getInteractRecords: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getInteractRecords'),
+        getFriendBlacklist: async (accountRef) => {
+            const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) return [];
+            const fromStore = store.getFriendBlacklist ? store.getFriendBlacklist(accountId) : [];
+            return Array.isArray(fromStore) ? fromStore : [];
+        },
+        getFriendCache: async (accountRef) => {
+            const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) return [];
+            const fromStore = store.getFriendCache ? store.getFriendCache(accountId) : [];
+            return Array.isArray(fromStore) ? fromStore : [];
+        },
+        extractFriendsFromInteractRecords: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'extractFriendsFromInteractRecords'),
         getFriendLands: (accountRef, gid) => callWorkerApi(resolveAccountRefId(accountRef), 'getFriendLands', gid),
         doFriendOp: (accountRef, gid, opType) => callWorkerApi(resolveAccountRefId(accountRef), 'doFriendOp', gid, opType),
         getBag: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getBag'),
+        getBagSeeds: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getBagSeeds'),
         getDailyGifts: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
         getSeeds: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeeds'),
 
@@ -98,9 +133,11 @@ function createDataProvider(options) {
             const body = (payload && typeof payload === 'object') ? payload : {};
             const plantingStrategy = (body.plantingStrategy !== undefined) ? body.plantingStrategy : body.strategy;
             const preferredSeedId = (body.preferredSeedId !== undefined) ? body.preferredSeedId : body.seedId;
+            const bagSeedPriority = body.bagSeedPriority;
             const snapshot = {
                 plantingStrategy,
                 preferredSeedId,
+                bagSeedPriority,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
             };
@@ -110,6 +147,7 @@ function createDataProvider(options) {
             return {
                 strategy: store.getPlantingStrategy(accountId),
                 preferredSeed: store.getPreferredSeed(accountId),
+                bagSeedPriority: store.getBagSeedPriority(accountId),
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
                 configRevision: rev,
@@ -119,6 +157,21 @@ function createDataProvider(options) {
         setUITheme: async (theme) => {
             const snapshot = store.setUITheme(theme);
             return { ui: snapshot.ui || store.getUI() };
+        },
+
+        getRuntimeClientConfig: () => {
+            return store.getRuntimeClientConfig ? store.getRuntimeClientConfig() : null;
+        },
+
+        setRuntimeClientConfig: async (payload) => {
+            const body = (payload && typeof payload === 'object') ? payload : {};
+            if (store.setRuntimeClientConfig) {
+                store.setRuntimeClientConfig(body);
+            }
+            const rev = nextConfigRevision();
+            // 全局配置：广播到所有 worker
+            broadcastConfigToWorkers('');
+            return { runtimeClient: store.getRuntimeClientConfig ? store.getRuntimeClientConfig() : null, configRevision: rev };
         },
 
         broadcastConfig: (accountId) => {

@@ -3,162 +3,162 @@
  */
 
 const protobuf = require('protobufjs');
-const { getResourcePath } = require('../config/runtime-paths');
+const fs = require('node:fs');
+const path = require('node:path');
 const { log } = require('./utils');
 
-// Proto 根对象与所有消息类型
 let root = null;
 const types = {};
+
+// Proto 文件所在目录
+const PROTO_DIR = path.dirname(require.resolve('../proto/game.proto'));
+
+const typeMappings = [
+    // 网关
+    ['GateMessage', 'gatepb.Message'],
+    ['GateMeta', 'gatepb.Meta'],
+    ['EventMessage', 'gatepb.EventMessage'],
+    // 用户
+    ['LoginRequest', 'gamepb.userpb.LoginRequest'],
+    ['LoginReply', 'gamepb.userpb.LoginReply'],
+    ['HeartbeatRequest', 'gamepb.userpb.HeartbeatRequest'],
+    ['HeartbeatReply', 'gamepb.userpb.HeartbeatReply'],
+    ['ReportArkClickRequest', 'gamepb.userpb.ReportArkClickRequest'],
+    ['ReportArkClickReply', 'gamepb.userpb.ReportArkClickReply'],
+    ['BasicNotify', 'gamepb.userpb.BasicNotify'],
+    // 农场
+    ['AllLandsRequest', 'gamepb.plantpb.AllLandsRequest'],
+    ['AllLandsReply', 'gamepb.plantpb.AllLandsReply'],
+    ['HarvestRequest', 'gamepb.plantpb.HarvestRequest'],
+    ['HarvestReply', 'gamepb.plantpb.HarvestReply'],
+    ['WaterLandRequest', 'gamepb.plantpb.WaterLandRequest'],
+    ['WaterLandReply', 'gamepb.plantpb.WaterLandReply'],
+    ['WeedOutRequest', 'gamepb.plantpb.WeedOutRequest'],
+    ['WeedOutReply', 'gamepb.plantpb.WeedOutReply'],
+    ['InsecticideRequest', 'gamepb.plantpb.InsecticideRequest'],
+    ['InsecticideReply', 'gamepb.plantpb.InsecticideReply'],
+    ['RemovePlantRequest', 'gamepb.plantpb.RemovePlantRequest'],
+    ['RemovePlantReply', 'gamepb.plantpb.RemovePlantReply'],
+    ['PutInsectsRequest', 'gamepb.plantpb.PutInsectsRequest'],
+    ['PutInsectsReply', 'gamepb.plantpb.PutInsectsReply'],
+    ['PutWeedsRequest', 'gamepb.plantpb.PutWeedsRequest'],
+    ['PutWeedsReply', 'gamepb.plantpb.PutWeedsReply'],
+    ['UpgradeLandRequest', 'gamepb.plantpb.UpgradeLandRequest'],
+    ['UpgradeLandReply', 'gamepb.plantpb.UpgradeLandReply'],
+    ['UnlockLandRequest', 'gamepb.plantpb.UnlockLandRequest'],
+    ['UnlockLandReply', 'gamepb.plantpb.UnlockLandReply'],
+    ['CheckCanOperateRequest', 'gamepb.plantpb.CheckCanOperateRequest'],
+    ['CheckCanOperateReply', 'gamepb.plantpb.CheckCanOperateReply'],
+    ['FertilizeRequest', 'gamepb.plantpb.FertilizeRequest'],
+    ['FertilizeReply', 'gamepb.plantpb.FertilizeReply'],
+    ['PlantRequest', 'gamepb.plantpb.PlantRequest'],
+    ['PlantReply', 'gamepb.plantpb.PlantReply'],
+    ['LandsNotify', 'gamepb.plantpb.LandsNotify'],
+    // 背包/仓库
+    ['BagRequest', 'gamepb.itempb.BagRequest'],
+    ['BagReply', 'gamepb.itempb.BagReply'],
+    ['SellRequest', 'gamepb.itempb.SellRequest'],
+    ['SellReply', 'gamepb.itempb.SellReply'],
+    ['UseRequest', 'gamepb.itempb.UseRequest'],
+    ['UseReply', 'gamepb.itempb.UseReply'],
+    ['BatchUseRequest', 'gamepb.itempb.BatchUseRequest'],
+    ['BatchUseReply', 'gamepb.itempb.BatchUseReply'],
+    ['ItemNotify', 'gamepb.itempb.ItemNotify'],
+    // 商店
+    ['ShopProfilesRequest', 'gamepb.shoppb.ShopProfilesRequest'],
+    ['ShopProfilesReply', 'gamepb.shoppb.ShopProfilesReply'],
+    ['ShopInfoRequest', 'gamepb.shoppb.ShopInfoRequest'],
+    ['ShopInfoReply', 'gamepb.shoppb.ShopInfoReply'],
+    ['BuyGoodsRequest', 'gamepb.shoppb.BuyGoodsRequest'],
+    ['BuyGoodsReply', 'gamepb.shoppb.BuyGoodsReply'],
+    ['GoodsUnlockNotify', 'gamepb.shoppb.GoodsUnlockNotify'],
+    // 商城
+    ['GetMonthCardInfosRequest', 'gamepb.mallpb.GetMonthCardInfosRequest'],
+    ['GetMonthCardInfosReply', 'gamepb.mallpb.GetMonthCardInfosReply'],
+    ['ClaimMonthCardRewardRequest', 'gamepb.mallpb.ClaimMonthCardRewardRequest'],
+    ['ClaimMonthCardRewardReply', 'gamepb.mallpb.ClaimMonthCardRewardReply'],
+    ['GetTodayClaimStatusRequest', 'gamepb.redpacketpb.GetTodayClaimStatusRequest'],
+    ['GetTodayClaimStatusReply', 'gamepb.redpacketpb.GetTodayClaimStatusReply'],
+    ['ClaimRedPacketRequest', 'gamepb.redpacketpb.ClaimRedPacketRequest'],
+    ['ClaimRedPacketReply', 'gamepb.redpacketpb.ClaimRedPacketReply'],
+    ['GetMallListBySlotTypeRequest', 'gamepb.mallpb.GetMallListBySlotTypeRequest'],
+    ['GetMallListBySlotTypeResponse', 'gamepb.mallpb.GetMallListBySlotTypeResponse'],
+    ['MallGoods', 'gamepb.mallpb.MallGoods'],
+    ['PurchaseRequest', 'gamepb.mallpb.PurchaseRequest'],
+    ['PurchaseResponse', 'gamepb.mallpb.PurchaseResponse'],
+    // QQ会员
+    ['GetDailyGiftStatusRequest', 'gamepb.qqvippb.GetDailyGiftStatusRequest'],
+    ['GetDailyGiftStatusReply', 'gamepb.qqvippb.GetDailyGiftStatusReply'],
+    ['ClaimDailyGiftRequest', 'gamepb.qqvippb.ClaimDailyGiftRequest'],
+    ['ClaimDailyGiftReply', 'gamepb.qqvippb.ClaimDailyGiftReply'],
+    // 分享
+    ['CheckCanShareRequest', 'gamepb.sharepb.CheckCanShareRequest'],
+    ['CheckCanShareReply', 'gamepb.sharepb.CheckCanShareReply'],
+    ['ReportShareRequest', 'gamepb.sharepb.ReportShareRequest'],
+    ['ReportShareReply', 'gamepb.sharepb.ReportShareReply'],
+    ['ClaimShareRewardRequest', 'gamepb.sharepb.ClaimShareRewardRequest'],
+    ['ClaimShareRewardReply', 'gamepb.sharepb.ClaimShareRewardReply'],
+    // 图鉴
+    ['GetIllustratedListV2Request', 'gamepb.illustratedpb.GetIllustratedListV2Request'],
+    ['GetIllustratedListV2Reply', 'gamepb.illustratedpb.GetIllustratedListV2Reply'],
+    ['ClaimAllRewardsV2Request', 'gamepb.illustratedpb.ClaimAllRewardsV2Request'],
+    ['ClaimAllRewardsV2Reply', 'gamepb.illustratedpb.ClaimAllRewardsV2Reply'],
+    // 好友
+    ['GetAllFriendsRequest', 'gamepb.friendpb.GetAllRequest'],
+    ['GetAllFriendsReply', 'gamepb.friendpb.GetAllReply'],
+    ['SyncAllRequest', 'gamepb.friendpb.SyncAllRequest'],
+    ['SyncAllReply', 'gamepb.friendpb.SyncAllReply'],
+    ['SyncAllFriendsRequest', 'gamepb.friendpb.SyncAllRequest'],
+    ['SyncAllFriendsReply', 'gamepb.friendpb.SyncAllReply'],
+    ['GetGameFriendsRequest', 'gamepb.friendpb.GetGameFriendsRequest'],
+    ['GetGameFriendsReply', 'gamepb.friendpb.GetGameFriendsReply'],
+    ['GetApplicationsRequest', 'gamepb.friendpb.GetApplicationsRequest'],
+    ['GetApplicationsReply', 'gamepb.friendpb.GetApplicationsReply'],
+    ['AcceptFriendsRequest', 'gamepb.friendpb.AcceptFriendsRequest'],
+    ['AcceptFriendsReply', 'gamepb.friendpb.AcceptFriendsReply'],
+    ['FriendApplicationReceivedNotify', 'gamepb.friendpb.FriendApplicationReceivedNotify'],
+    ['FriendAddedNotify', 'gamepb.friendpb.FriendAddedNotify'],
+    ['InteractRecordsRequest', 'gamepb.interactpb.InteractRecordsRequest'],
+    ['InteractRecordsReply', 'gamepb.interactpb.InteractRecordsReply'],
+    // 访问
+    ['VisitEnterRequest', 'gamepb.visitpb.EnterRequest'],
+    ['VisitEnterReply', 'gamepb.visitpb.EnterReply'],
+    ['VisitLeaveRequest', 'gamepb.visitpb.LeaveRequest'],
+    ['VisitLeaveReply', 'gamepb.visitpb.LeaveReply'],
+    // 任务
+    ['TaskInfoRequest', 'gamepb.taskpb.TaskInfoRequest'],
+    ['TaskInfoReply', 'gamepb.taskpb.TaskInfoReply'],
+    ['ClaimTaskRewardRequest', 'gamepb.taskpb.ClaimTaskRewardRequest'],
+    ['ClaimTaskRewardReply', 'gamepb.taskpb.ClaimTaskRewardReply'],
+    ['BatchClaimTaskRewardRequest', 'gamepb.taskpb.BatchClaimTaskRewardRequest'],
+    ['BatchClaimTaskRewardReply', 'gamepb.taskpb.BatchClaimTaskRewardReply'],
+    ['ClaimDailyRewardRequest', 'gamepb.taskpb.ClaimDailyRewardRequest'],
+    ['ClaimDailyRewardReply', 'gamepb.taskpb.ClaimDailyRewardReply'],
+    ['TaskInfoNotify', 'gamepb.taskpb.TaskInfoNotify'],
+    // 邮箱
+    ['GetEmailListRequest', 'gamepb.emailpb.GetEmailListRequest'],
+    ['GetEmailListReply', 'gamepb.emailpb.GetEmailListReply'],
+    ['ClaimEmailRequest', 'gamepb.emailpb.ClaimEmailRequest'],
+    ['ClaimEmailReply', 'gamepb.emailpb.ClaimEmailReply'],
+    ['BatchClaimEmailRequest', 'gamepb.emailpb.BatchClaimEmailRequest'],
+    ['BatchClaimEmailReply', 'gamepb.emailpb.BatchClaimEmailReply'],
+    // 其他
+    ['KickoutNotify', 'gatepb.KickoutNotify'],
+];
 
 async function loadProto() {
     log('系统', '正在加载 Protobuf 定义...');
     root = new protobuf.Root();
-    await root.load([
-        getResourcePath('proto', 'game.proto'),
-        getResourcePath('proto', 'userpb.proto'),
-        getResourcePath('proto', 'plantpb.proto'),
-        getResourcePath('proto', 'corepb.proto'),
-        getResourcePath('proto', 'shoppb.proto'),
-        getResourcePath('proto', 'friendpb.proto'),
-        getResourcePath('proto', 'visitpb.proto'),
-        getResourcePath('proto', 'notifypb.proto'),
-        getResourcePath('proto', 'taskpb.proto'),
-        getResourcePath('proto', 'itempb.proto'),
-        getResourcePath('proto', 'emailpb.proto'),
-        getResourcePath('proto', 'mallpb.proto'),
-        getResourcePath('proto', 'redpacketpb.proto'),
-        getResourcePath('proto', 'qqvippb.proto'),
-        getResourcePath('proto', 'sharepb.proto'),
-        getResourcePath('proto', 'illustratedpb.proto'),
-    ], { keepCase: true });
 
-    // 网关
-    types.GateMessage = root.lookupType('gatepb.Message');
-    types.GateMeta = root.lookupType('gatepb.Meta');
-    types.EventMessage = root.lookupType('gatepb.EventMessage');
+    const protoFiles = fs.readdirSync(PROTO_DIR)
+        .filter(f => f.endsWith('.proto'))
+        .map(f => path.join(PROTO_DIR, f));
 
-    // 用户
-    types.LoginRequest = root.lookupType('gamepb.userpb.LoginRequest');
-    types.LoginReply = root.lookupType('gamepb.userpb.LoginReply');
-    types.HeartbeatRequest = root.lookupType('gamepb.userpb.HeartbeatRequest');
-    types.HeartbeatReply = root.lookupType('gamepb.userpb.HeartbeatReply');
-    types.ReportArkClickRequest = root.lookupType('gamepb.userpb.ReportArkClickRequest');
-    types.ReportArkClickReply = root.lookupType('gamepb.userpb.ReportArkClickReply');
+    await root.load(protoFiles, { keepCase: true });
 
-    // 农场
-    types.AllLandsRequest = root.lookupType('gamepb.plantpb.AllLandsRequest');
-    types.AllLandsReply = root.lookupType('gamepb.plantpb.AllLandsReply');
-    types.HarvestRequest = root.lookupType('gamepb.plantpb.HarvestRequest');
-    types.HarvestReply = root.lookupType('gamepb.plantpb.HarvestReply');
-    types.WaterLandRequest = root.lookupType('gamepb.plantpb.WaterLandRequest');
-    types.WaterLandReply = root.lookupType('gamepb.plantpb.WaterLandReply');
-    types.WeedOutRequest = root.lookupType('gamepb.plantpb.WeedOutRequest');
-    types.WeedOutReply = root.lookupType('gamepb.plantpb.WeedOutReply');
-    types.InsecticideRequest = root.lookupType('gamepb.plantpb.InsecticideRequest');
-    types.InsecticideReply = root.lookupType('gamepb.plantpb.InsecticideReply');
-    types.RemovePlantRequest = root.lookupType('gamepb.plantpb.RemovePlantRequest');
-    types.RemovePlantReply = root.lookupType('gamepb.plantpb.RemovePlantReply');
-    types.PutInsectsRequest = root.lookupType('gamepb.plantpb.PutInsectsRequest');
-    types.PutInsectsReply = root.lookupType('gamepb.plantpb.PutInsectsReply');
-    types.PutWeedsRequest = root.lookupType('gamepb.plantpb.PutWeedsRequest');
-    types.PutWeedsReply = root.lookupType('gamepb.plantpb.PutWeedsReply');
-    types.UpgradeLandRequest = root.lookupType('gamepb.plantpb.UpgradeLandRequest');
-    types.UpgradeLandReply = root.lookupType('gamepb.plantpb.UpgradeLandReply');
-    types.UnlockLandRequest = root.lookupType('gamepb.plantpb.UnlockLandRequest');
-    types.UnlockLandReply = root.lookupType('gamepb.plantpb.UnlockLandReply');
-    types.CheckCanOperateRequest = root.lookupType('gamepb.plantpb.CheckCanOperateRequest');
-    types.CheckCanOperateReply = root.lookupType('gamepb.plantpb.CheckCanOperateReply');
-    types.FertilizeRequest = root.lookupType('gamepb.plantpb.FertilizeRequest');
-    types.FertilizeReply = root.lookupType('gamepb.plantpb.FertilizeReply');
-
-    // 背包/仓库
-    types.BagRequest = root.lookupType('gamepb.itempb.BagRequest');
-    types.BagReply = root.lookupType('gamepb.itempb.BagReply');
-    types.SellRequest = root.lookupType('gamepb.itempb.SellRequest');
-    types.SellReply = root.lookupType('gamepb.itempb.SellReply');
-    types.UseRequest = root.lookupType('gamepb.itempb.UseRequest');
-    types.UseReply = root.lookupType('gamepb.itempb.UseReply');
-    types.BatchUseRequest = root.lookupType('gamepb.itempb.BatchUseRequest');
-    types.BatchUseReply = root.lookupType('gamepb.itempb.BatchUseReply');
-    types.PlantRequest = root.lookupType('gamepb.plantpb.PlantRequest');
-    types.PlantReply = root.lookupType('gamepb.plantpb.PlantReply');
-
-    // 商店
-    types.ShopProfilesRequest = root.lookupType('gamepb.shoppb.ShopProfilesRequest');
-    types.ShopProfilesReply = root.lookupType('gamepb.shoppb.ShopProfilesReply');
-    types.ShopInfoRequest = root.lookupType('gamepb.shoppb.ShopInfoRequest');
-    types.ShopInfoReply = root.lookupType('gamepb.shoppb.ShopInfoReply');
-    types.BuyGoodsRequest = root.lookupType('gamepb.shoppb.BuyGoodsRequest');
-    types.BuyGoodsReply = root.lookupType('gamepb.shoppb.BuyGoodsReply');
-    types.GetMonthCardInfosRequest = root.lookupType('gamepb.mallpb.GetMonthCardInfosRequest');
-    types.GetMonthCardInfosReply = root.lookupType('gamepb.mallpb.GetMonthCardInfosReply');
-    types.ClaimMonthCardRewardRequest = root.lookupType('gamepb.mallpb.ClaimMonthCardRewardRequest');
-    types.ClaimMonthCardRewardReply = root.lookupType('gamepb.mallpb.ClaimMonthCardRewardReply');
-    types.GetTodayClaimStatusRequest = root.lookupType('gamepb.redpacketpb.GetTodayClaimStatusRequest');
-    types.GetTodayClaimStatusReply = root.lookupType('gamepb.redpacketpb.GetTodayClaimStatusReply');
-    types.ClaimRedPacketRequest = root.lookupType('gamepb.redpacketpb.ClaimRedPacketRequest');
-    types.ClaimRedPacketReply = root.lookupType('gamepb.redpacketpb.ClaimRedPacketReply');
-    types.GetMallListBySlotTypeRequest = root.lookupType('gamepb.mallpb.GetMallListBySlotTypeRequest');
-    types.GetMallListBySlotTypeResponse = root.lookupType('gamepb.mallpb.GetMallListBySlotTypeResponse');
-    types.MallGoods = root.lookupType('gamepb.mallpb.MallGoods');
-    types.PurchaseRequest = root.lookupType('gamepb.mallpb.PurchaseRequest');
-    types.PurchaseResponse = root.lookupType('gamepb.mallpb.PurchaseResponse');
-    types.GetDailyGiftStatusRequest = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusRequest');
-    types.GetDailyGiftStatusReply = root.lookupType('gamepb.qqvippb.GetDailyGiftStatusReply');
-    types.ClaimDailyGiftRequest = root.lookupType('gamepb.qqvippb.ClaimDailyGiftRequest');
-    types.ClaimDailyGiftReply = root.lookupType('gamepb.qqvippb.ClaimDailyGiftReply');
-    types.CheckCanShareRequest = root.lookupType('gamepb.sharepb.CheckCanShareRequest');
-    types.CheckCanShareReply = root.lookupType('gamepb.sharepb.CheckCanShareReply');
-    types.ReportShareRequest = root.lookupType('gamepb.sharepb.ReportShareRequest');
-    types.ReportShareReply = root.lookupType('gamepb.sharepb.ReportShareReply');
-    types.ClaimShareRewardRequest = root.lookupType('gamepb.sharepb.ClaimShareRewardRequest');
-    types.ClaimShareRewardReply = root.lookupType('gamepb.sharepb.ClaimShareRewardReply');
-    types.GetIllustratedListV2Request = root.lookupType('gamepb.illustratedpb.GetIllustratedListV2Request');
-    types.GetIllustratedListV2Reply = root.lookupType('gamepb.illustratedpb.GetIllustratedListV2Reply');
-    types.ClaimAllRewardsV2Request = root.lookupType('gamepb.illustratedpb.ClaimAllRewardsV2Request');
-    types.ClaimAllRewardsV2Reply = root.lookupType('gamepb.illustratedpb.ClaimAllRewardsV2Reply');
-
-    // 好友
-    types.GetAllFriendsRequest = root.lookupType('gamepb.friendpb.GetAllRequest');
-    types.GetAllFriendsReply = root.lookupType('gamepb.friendpb.GetAllReply');
-    types.GetApplicationsRequest = root.lookupType('gamepb.friendpb.GetApplicationsRequest');
-    types.GetApplicationsReply = root.lookupType('gamepb.friendpb.GetApplicationsReply');
-    types.AcceptFriendsRequest = root.lookupType('gamepb.friendpb.AcceptFriendsRequest');
-    types.AcceptFriendsReply = root.lookupType('gamepb.friendpb.AcceptFriendsReply');
-
-    // 访问
-    types.VisitEnterRequest = root.lookupType('gamepb.visitpb.EnterRequest');
-    types.VisitEnterReply = root.lookupType('gamepb.visitpb.EnterReply');
-    types.VisitLeaveRequest = root.lookupType('gamepb.visitpb.LeaveRequest');
-    types.VisitLeaveReply = root.lookupType('gamepb.visitpb.LeaveReply');
-
-    // 任务
-    types.TaskInfoRequest = root.lookupType('gamepb.taskpb.TaskInfoRequest');
-    types.TaskInfoReply = root.lookupType('gamepb.taskpb.TaskInfoReply');
-    types.ClaimTaskRewardRequest = root.lookupType('gamepb.taskpb.ClaimTaskRewardRequest');
-    types.ClaimTaskRewardReply = root.lookupType('gamepb.taskpb.ClaimTaskRewardReply');
-    types.BatchClaimTaskRewardRequest = root.lookupType('gamepb.taskpb.BatchClaimTaskRewardRequest');
-    types.BatchClaimTaskRewardReply = root.lookupType('gamepb.taskpb.BatchClaimTaskRewardReply');
-    types.ClaimDailyRewardRequest = root.lookupType('gamepb.taskpb.ClaimDailyRewardRequest');
-    types.ClaimDailyRewardReply = root.lookupType('gamepb.taskpb.ClaimDailyRewardReply');
-
-    // 邮箱
-    types.GetEmailListRequest = root.lookupType('gamepb.emailpb.GetEmailListRequest');
-    types.GetEmailListReply = root.lookupType('gamepb.emailpb.GetEmailListReply');
-    types.ClaimEmailRequest = root.lookupType('gamepb.emailpb.ClaimEmailRequest');
-    types.ClaimEmailReply = root.lookupType('gamepb.emailpb.ClaimEmailReply');
-    types.BatchClaimEmailRequest = root.lookupType('gamepb.emailpb.BatchClaimEmailRequest');
-    types.BatchClaimEmailReply = root.lookupType('gamepb.emailpb.BatchClaimEmailReply');
-
-    // 服务器推送通知
-    types.LandsNotify = root.lookupType('gamepb.plantpb.LandsNotify');
-    types.BasicNotify = root.lookupType('gamepb.userpb.BasicNotify');
-    types.KickoutNotify = root.lookupType('gatepb.KickoutNotify');
-    types.FriendApplicationReceivedNotify = root.lookupType('gamepb.friendpb.FriendApplicationReceivedNotify');
-    types.FriendAddedNotify = root.lookupType('gamepb.friendpb.FriendAddedNotify');
-    types.ItemNotify = root.lookupType('gamepb.itempb.ItemNotify');
-    types.GoodsUnlockNotify = root.lookupType('gamepb.shoppb.GoodsUnlockNotify');
-    types.TaskInfoNotify = root.lookupType('gamepb.taskpb.TaskInfoNotify');
+    for (const [typeName, fullName] of typeMappings) {
+        types[typeName] = root.lookupType(fullName);
+    }
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

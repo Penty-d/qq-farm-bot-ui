@@ -5,17 +5,20 @@
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toLong, toNum, log, logWarn, sleep } = require('../utils/utils');
+const { toLong, toNum, log, logWarn, sleep, getServerTimeSec } = require('../utils/utils');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
+const { getRewardSummary } = require('./common');
 
 let checking = false;
 let taskClaimDoneDateKey = '';
 let taskClaimLastAt = 0;
 const taskScheduler = createScheduler('task');
 
+const TASK_CHECK_COOLDOWN_MS = 5 * 60 * 1000; // 5分钟冷却
+let lastTaskCheckAt = 0;
+
 function getDateKey() {
-    const { getServerTimeSec } = require('../utils/utils');
     const nowSec = getServerTimeSec();
     const nowMs = nowSec > 0 ? nowSec * 1000 : Date.now();
     const bjOffset = 8 * 3600 * 1000;
@@ -24,6 +27,24 @@ function getDateKey() {
     const m = String(bjDate.getUTCMonth() + 1).padStart(2, '0');
     const d = String(bjDate.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+}
+
+function canCheckTasks() {
+    const now = Date.now();
+    const currentKey = getDateKey();
+    
+    // 新的一天，可以检查
+    if (currentKey !== taskClaimDoneDateKey) return true;
+    
+    // 超过冷却时间，可以检查
+    if (now - lastTaskCheckAt >= TASK_CHECK_COOLDOWN_MS) return true;
+    
+    return false;
+}
+
+function markTasksChecked() {
+    lastTaskCheckAt = Date.now();
+    taskClaimDoneDateKey = getDateKey();
 }
 
 // ============ 任务 API ============
@@ -111,22 +132,6 @@ function analyzeTaskList(tasks, category = 'main') {
     return claimable;
 }
 
-/**
- * 计算奖励摘要
- */
-function getRewardSummary(items) {
-    const summary = [];
-    for (const item of items) {
-        const id = toNum(item.id);
-        const count = toNum(item.count);
-        if (id === 1 || id === 1001) summary.push(`金币${count}`);
-        else if (id === 2 || id === 1101) summary.push(`经验${count}`);
-        else if (id === 1002) summary.push(`点券${count}`);
-        else summary.push(`物品#${id}x${count}`);
-    }
-    return summary.join('/');
-}
-
 function buildDailyTasksForDebug(taskInfo) {
     const ti = taskInfo && typeof taskInfo === 'object' ? taskInfo : {};
     const dailyList = Array.isArray(ti.daily_tasks) ? ti.daily_tasks : [];
@@ -205,9 +210,15 @@ async function checkAndClaimIllustratedRewards() {
 
 // ============ 自动领取 ============
 
-async function checkAndClaimTasks() {
+async function checkAndClaimTasks(force = false) {
     if (checking) return;
     if (!isAutomationOn('task')) return;
+    
+    // 防重复检查
+    if (!force && !canCheckTasks()) {
+        return;
+    }
+    
     checking = true;
     try {
         const reply = await getTaskInfo();
@@ -248,6 +259,8 @@ async function checkAndClaimTasks() {
         });
     } finally {
         checking = false;
+        // 标记已检查
+        markTasksChecked();
     }
 }
 
@@ -329,6 +342,7 @@ module.exports = {
     getTaskClaimDailyState: () => ({
         key: 'task_claim',
         doneToday: taskClaimDoneDateKey === getDateKey(),
+        lastCheckAt: lastTaskCheckAt,
         lastClaimAt: taskClaimLastAt,
     }),
     getTaskDailyStateLikeApp: async () => {

@@ -22,6 +22,8 @@ onMounted(() => {
 /* Global styles */
 body {
   margin: 0;
-  font-family: 'DM Sans', sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', sans-serif;
 }
 </style>

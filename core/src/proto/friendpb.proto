@@ -61,6 +61,15 @@ message SyncAllReply {
     int64 application_count = 3;
 }
 
+// --- 通过 GID 列表获取好友信息 ---
+message GetGameFriendsRequest {
+    repeated int64 gids = 1 [packed = true];
+}
+
+message GetGameFriendsReply {
+    repeated GameFriend game_friends = 1;
+}
+
 // ============ 好友申请 (微信同玩) ============
 
 // 申请信息

@@ -4,17 +4,24 @@ const process = require('node:process');
  */
 
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
+const { CONFIG: BASE_CONFIG } = require('../config/config');
 const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
 
 const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
-const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit'];
+const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
 const PUSHOO_CHANNELS = new Set([
     'webhook', 'qmsg', 'serverchan', 'pushplus', 'pushplushxtrip',
     'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
     'pushdeer', 'igot', 'telegram', 'feishu', 'ifttt', 'wecombot',
     'discord', 'wxpusher',
+    'custom_request',
 ]);
+const INTERVAL_MAX_SEC = 86400;
+const DEFAULT_OFFLINE_DELETE_SEC = 1;
+const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
+const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
+const DEFAULT_STEAL_PLANT_BLACKLIST = [];
 const DEFAULT_OFFLINE_REMINDER = {
     channel: 'webhook',
     reloginUrlMode: 'none',
@@ -22,17 +29,41 @@ const DEFAULT_OFFLINE_REMINDER = {
     token: '',
     title: '账号下线提醒',
     msg: '账号下线',
-    offlineDeleteSec: 120,
+    offlineDeleteSec: DEFAULT_OFFLINE_DELETE_SEC,
+    offlineDeleteEnabled: false,
+    custom_headers: '',
+    custom_body: '',
+};
+
+const DEFAULT_QR_LOGIN = {
+    apiDomain: 'q.qq.com',
+};
+
+const DEFAULT_RUNTIME_CLIENT = {
+    serverUrl: BASE_CONFIG.serverUrl,
+    clientVersion: BASE_CONFIG.clientVersion,
+    os: BASE_CONFIG.os,
+    device_info: {
+        sys_software: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.sys_software) ? BASE_CONFIG.device_info.sys_software : 'iOS 26.2.1',
+        network: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.network) ? BASE_CONFIG.device_info.network : 'wifi',
+        memory: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.memory) ? BASE_CONFIG.device_info.memory : '7672',
+        device_id: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.device_id) ? BASE_CONFIG.device_info.device_id : 'iPhone X<iPhone18,3>',
+    },
 };
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
         farm: true,
+        farm_manage: true, // 农场打理总开关（浇水/除草/除虫）
+        farm_water: true, // 自动浇水
+        farm_weed: true, // 自动除草
+        farm_bug: true, // 自动除虫
         farm_push: true,   // 收到 LandsNotify 推送时是否立即触发巡田
         land_upgrade: true, // 是否自动升级土地
         friend: true,       // 好友互动总开关
         friend_help_exp_limit: true, // 帮忙经验达上限后自动停止帮忙
         friend_steal: true, // 偷菜
+        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST], // 偷菜作物黑名单（按作物ID）
         friend_help: true,  // 帮忙
         friend_bad: false,  // 捣乱(放虫草)
         task: true,
@@ -44,11 +75,14 @@ const DEFAULT_ACCOUNT_CONFIG = {
         vip_gift: true,
         month_card: true,
         open_server_gift: true,
-        sell: true,
+        sell: false,
         fertilizer: 'none',
+        fertilizer_multi_season: false,
+        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
     },
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
+    bagSeedPriority: [],
     intervals: {
         farm: 2,
         friend: 10,
@@ -63,12 +97,17 @@ const DEFAULT_ACCOUNT_CONFIG = {
         end: '07:00',
     },
     friendBlacklist: [],
+    friendCache: [],
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
 
 let accountFallbackConfig = {
     ...DEFAULT_ACCOUNT_CONFIG,
-    automation: { ...DEFAULT_ACCOUNT_CONFIG.automation },
+    automation: {
+        ...DEFAULT_ACCOUNT_CONFIG.automation,
+        fertilizer_land_types: [...DEFAULT_FERTILIZER_LAND_TYPES],
+        friend_steal_blacklist: [...DEFAULT_STEAL_PLANT_BLACKLIST],
+    },
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
 };
@@ -80,6 +119,8 @@ const globalConfig = {
         theme: 'dark',
     },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
+    qrLogin: { ...DEFAULT_QR_LOGIN },
+    runtimeClient: { ...DEFAULT_RUNTIME_CLIENT, device_info: { ...DEFAULT_RUNTIME_CLIENT.device_info } },
     adminPasswordHash: '',
 };
 
@@ -105,7 +146,7 @@ function normalizeOfflineReminder(input) {
     const rawReloginUrlMode = (src.reloginUrlMode !== undefined && src.reloginUrlMode !== null)
         ? String(src.reloginUrlMode).trim().toLowerCase()
         : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
-    const reloginUrlMode = new Set(['none', 'qq_link', 'qr_link']).has(rawReloginUrlMode)
+    const reloginUrlMode = new Set(['none', 'qq_link', 'qr_code','all']).has(rawReloginUrlMode)
         ? rawReloginUrlMode
         : DEFAULT_OFFLINE_REMINDER.reloginUrlMode;
     const token = (src.token !== undefined && src.token !== null)
@@ -117,6 +158,15 @@ function normalizeOfflineReminder(input) {
     const msg = (src.msg !== undefined && src.msg !== null)
         ? String(src.msg).trim()
         : DEFAULT_OFFLINE_REMINDER.msg;
+    const offlineDeleteEnabled = src.offlineDeleteEnabled !== undefined
+        ? !!src.offlineDeleteEnabled
+        : !!DEFAULT_OFFLINE_REMINDER.offlineDeleteEnabled;
+    const custom_headers = (src.custom_headers !== undefined && src.custom_headers !== null)
+        ? String(src.custom_headers).trim()
+        : DEFAULT_OFFLINE_REMINDER.custom_headers;
+    const custom_body = (src.custom_body !== undefined && src.custom_body !== null)
+        ? String(src.custom_body).trim()
+        : DEFAULT_OFFLINE_REMINDER.custom_body;
     return {
         channel,
         reloginUrlMode,
@@ -125,7 +175,207 @@ function normalizeOfflineReminder(input) {
         title,
         msg,
         offlineDeleteSec,
+        offlineDeleteEnabled,
+        custom_headers,
+        custom_body,
     };
+}
+
+
+function normalizeApiDomain(input, fallback = DEFAULT_QR_LOGIN.apiDomain) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    const normalized = /^https?:\/\//i.test(raw) ? raw : (`https://${  raw}`);
+    try {
+        const parsed = new URL(normalized);
+        const host = String(parsed.host || '').trim();
+        return host || fallback;
+    } catch {
+        return fallback;
+    }
+}
+
+
+function normalizeQrLoginConfig(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    return {
+        apiDomain: normalizeApiDomain(src.apiDomain, DEFAULT_QR_LOGIN.apiDomain),
+    };
+}
+
+function normalizeRuntimeClientVersion(input, fallback = DEFAULT_RUNTIME_CLIENT.clientVersion) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    if (raw.length > 64) return fallback;
+    if (!/^[\w.-]+$/.test(raw)) return fallback;
+    return raw;
+}
+
+function normalizeRuntimeClientOs(input, fallback = DEFAULT_RUNTIME_CLIENT.os) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    if (raw.length > 16) return fallback;
+    if (!/^[\w.-]+$/.test(raw)) return fallback;
+    return raw;
+}
+
+function normalizeRuntimeClientServerUrl(input, fallback = DEFAULT_RUNTIME_CLIENT.serverUrl) {
+    const raw = String(input || '').trim();
+    if (!raw) return fallback;
+    // serverUrl 需要是 base url，query 由 network.connect() 追加
+    if (raw.includes('?') || raw.includes('#')) return fallback;
+    try {
+        const parsed = new URL(raw);
+        const protocol = String(parsed.protocol || '').toLowerCase();
+        if (protocol !== 'ws:' && protocol !== 'wss:') return fallback;
+        return parsed.toString().replace(/\/$/, '');
+    } catch {
+        return fallback;
+    }
+}
+
+function normalizeRuntimeClientDeviceInfo(input, fallback = DEFAULT_RUNTIME_CLIENT.device_info) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const base = (fallback && typeof fallback === 'object') ? fallback : DEFAULT_RUNTIME_CLIENT.device_info;
+    const toStr = (v, d, maxLen = 200) => {
+        const s = String(v !== undefined && v !== null ? v : d).trim();
+        if (!s) return String(d || '').trim();
+        return s.length > maxLen ? s.slice(0, maxLen) : s;
+    };
+    return {
+        sys_software: toStr(src.sys_software, base.sys_software, 100),
+        network: toStr(src.network, base.network, 32),
+        memory: toStr(src.memory, base.memory, 32),
+        device_id: toStr(src.device_id, base.device_id, 120),
+    };
+}
+
+function normalizeRuntimeClientConfig(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const current = normalizeRuntimeClientConfig.current || DEFAULT_RUNTIME_CLIENT;
+    const fallback = (current && typeof current === 'object') ? current : DEFAULT_RUNTIME_CLIENT;
+    const baseDevice = (fallback.device_info && typeof fallback.device_info === 'object')
+        ? fallback.device_info
+        : DEFAULT_RUNTIME_CLIENT.device_info;
+
+    const next = {
+        serverUrl: normalizeRuntimeClientServerUrl(src.serverUrl, fallback.serverUrl),
+        clientVersion: normalizeRuntimeClientVersion(src.clientVersion, fallback.clientVersion),
+        os: normalizeRuntimeClientOs(src.os, fallback.os),
+        device_info: normalizeRuntimeClientDeviceInfo(src.device_info, baseDevice),
+    };
+    return next;
+}
+
+function getRuntimeClientConfig() {
+    const current = globalConfig.runtimeClient || DEFAULT_RUNTIME_CLIENT;
+    // 提供当前值作为 normalize fallback
+    normalizeRuntimeClientConfig.current = current;
+    const normalized = normalizeRuntimeClientConfig(current);
+    delete normalizeRuntimeClientConfig.current;
+    // device_info.client_version 永远由 clientVersion 派生
+    return {
+        ...normalized,
+        device_info: {
+            ...normalized.device_info,
+            client_version: normalized.clientVersion,
+        },
+    };
+}
+
+function setRuntimeClientConfig(cfg) {
+    const current = getRuntimeClientConfig();
+    const incoming = (cfg && typeof cfg === 'object') ? cfg : {};
+    const merged = {
+        ...current,
+        ...incoming,
+        device_info: {
+            ...(current.device_info || {}),
+            ...((incoming.device_info && typeof incoming.device_info === 'object') ? incoming.device_info : {}),
+        },
+    };
+    // normalize 时使用 merged 作为 fallback
+    normalizeRuntimeClientConfig.current = merged;
+    const normalized = normalizeRuntimeClientConfig(merged);
+    delete normalizeRuntimeClientConfig.current;
+    globalConfig.runtimeClient = {
+        ...normalized,
+        device_info: { ...normalized.device_info },
+    };
+    saveGlobalConfig();
+    return getRuntimeClientConfig();
+}
+function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
+    const source = Array.isArray(input) ? input : fallback;
+    const normalized = [];
+    for (const item of source) {
+        const value = String(item || '').trim().toLowerCase();
+        if (!FERTILIZER_LAND_TYPE_SET.has(value)) continue;
+        if (normalized.includes(value)) continue;
+        normalized.push(value);
+    }
+    return normalized;
+}
+
+function normalizeStealPlantBlacklist(input, fallback = DEFAULT_STEAL_PLANT_BLACKLIST) {
+    const source = Array.isArray(input) ? input : fallback;
+    const normalized = [];
+    for (const item of source) {
+        const value = Number.parseInt(item, 10);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        if (normalized.includes(value)) continue;
+        normalized.push(value);
+    }
+    return normalized;
+}
+
+function normalizeBagSeedPriority(input) {
+    if (!Array.isArray(input)) return [];
+    const normalized = [];
+    for (const item of input) {
+        const value = Number.parseInt(item, 10);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        if (normalized.includes(value)) continue;
+        normalized.push(value);
+    }
+    return normalized;
+}
+
+function normalizeFriendCache(input) {
+    if (!Array.isArray(input)) return [];
+    const seen = new Set();
+    const normalized = [];
+    for (const item of input) {
+        if (!item || typeof item !== 'object') continue;
+        const gid = Number(item.gid);
+        if (!Number.isFinite(gid) || gid <= 0) continue;
+        if (seen.has(gid)) continue;
+        seen.add(gid);
+        normalized.push({
+            gid,
+            nick: String(item.nick || '').trim() || `GID:${gid}`,
+            avatarUrl: String(item.avatarUrl || '').trim(),
+        });
+    }
+    return normalized;
+}
+
+function mergeFriendCache(existing, newItems) {
+    const merged = normalizeFriendCache(existing);
+    const seen = new Set(merged.map(f => f.gid));
+    const toAdd = normalizeFriendCache(newItems);
+    for (const item of toAdd) {
+        if (seen.has(item.gid)) {
+            const idx = merged.findIndex(f => f.gid === item.gid);
+            if (idx >= 0) {
+                merged[idx] = { ...merged[idx], ...item };
+            }
+        } else {
+            seen.add(item.gid);
+            merged.push(item);
+        }
+    }
+    return merged;
 }
 
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
@@ -134,20 +384,31 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
         : {};
     const automation = { ...DEFAULT_ACCOUNT_CONFIG.automation };
     for (const key of Object.keys(automation)) {
+        if (key === 'fertilizer_land_types') {
+            automation[key] = normalizeFertilizerLandTypes(srcAutomation[key], DEFAULT_FERTILIZER_LAND_TYPES);
+            continue;
+        }
+        if (key === 'friend_steal_blacklist') {
+            automation[key] = normalizeStealPlantBlacklist(srcAutomation[key], DEFAULT_STEAL_PLANT_BLACKLIST);
+            continue;
+        }
         if (srcAutomation[key] !== undefined) automation[key] = srcAutomation[key];
     }
 
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
+    const rawFriendCache = Array.isArray(base.friendCache) ? base.friendCache : [];
     return {
         ...base,
         automation,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
+        friendCache: normalizeFriendCache(rawFriendCache),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
+        bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
     };
 }
 
@@ -168,6 +429,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
             if (k === 'fertilizer') {
                 const allowed = ['both', 'normal', 'organic', 'none'];
                 cfg.automation[k] = allowed.includes(v) ? v : cfg.automation[k];
+            } else if (k === 'fertilizer_land_types') {
+                cfg.automation[k] = normalizeFertilizerLandTypes(v, cfg.automation[k]);
+            } else if (k === 'friend_steal_blacklist') {
+                cfg.automation[k] = normalizeStealPlantBlacklist(v, cfg.automation[k]);
             } else {
                 cfg.automation[k] = !!v;
             }
@@ -180,6 +445,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
+    }
+
+    if (src.bagSeedPriority !== undefined) {
+        cfg.bagSeedPriority = normalizeBagSeedPriority(src.bagSeedPriority);
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -203,6 +472,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (Array.isArray(src.friendBlacklist)) {
         cfg.friendBlacklist = src.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    }
+
+    if (Array.isArray(src.friendCache)) {
+        cfg.friendCache = normalizeFriendCache(src.friendCache);
     }
 
     return cfg;
@@ -282,6 +555,19 @@ function loadGlobalConfig() {
             const theme = String(globalConfig.ui.theme || '').toLowerCase();
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
             globalConfig.offlineReminder = normalizeOfflineReminder(data.offlineReminder);
+            globalConfig.qrLogin = normalizeQrLoginConfig(data.qrLogin);
+            if (data.runtimeClient && typeof data.runtimeClient === 'object') {
+                // normalize 时使用当前 default 作为 fallback
+                normalizeRuntimeClientConfig.current = DEFAULT_RUNTIME_CLIENT;
+                const normalized = normalizeRuntimeClientConfig(data.runtimeClient);
+                delete normalizeRuntimeClientConfig.current;
+                globalConfig.runtimeClient = {
+                    ...normalized,
+                    device_info: { ...(normalized.device_info || {}) },
+                };
+            } else {
+                globalConfig.runtimeClient = { ...DEFAULT_RUNTIME_CLIENT, device_info: { ...DEFAULT_RUNTIME_CLIENT.device_info } };
+            }
             if (typeof data.adminPasswordHash === 'string') {
                 globalConfig.adminPasswordHash = data.adminPasswordHash;
             }
@@ -307,6 +593,13 @@ function sanitizeGlobalConfigBeforeSave() {
         nextMap[sid] = normalizeAccountConfig(cfg, accountFallbackConfig);
     }
     globalConfig.accountConfigs = nextMap;
+
+    // runtimeClient 白名单净化
+    globalConfig.runtimeClient = {
+        ...getRuntimeClientConfig(),
+        // 存盘时不强制写入 client_version（登录时派生即可），避免重复字段
+        device_info: { ...getRuntimeClientConfig().device_info },
+    };
 }
 
 // 保存全局配置
@@ -341,7 +634,10 @@ function setAdminPasswordHash(hash) {
 loadGlobalConfig();
 
 function getAutomation(accountId) {
-    return { ...getAccountConfigSnapshot(accountId).automation };
+    const automation = { ...getAccountConfigSnapshot(accountId).automation };
+    automation.fertilizer_land_types = normalizeFertilizerLandTypes(automation.fertilizer_land_types);
+    automation.friend_steal_blacklist = normalizeStealPlantBlacklist(automation.friend_steal_blacklist);
+    return automation;
 }
 
 function getConfigSnapshot(accountId) {
@@ -354,6 +650,8 @@ function getConfigSnapshot(accountId) {
         friendQuietHours: { ...cfg.friendQuietHours },
         friendBlacklist: [...(cfg.friendBlacklist || [])],
         ui: { ...globalConfig.ui },
+        qrLogin: normalizeQrLoginConfig(globalConfig.qrLogin),
+        runtimeClient: getRuntimeClientConfig(),
     };
 }
 
@@ -371,6 +669,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
             if (k === 'fertilizer') {
                 const allowed = ['both', 'normal', 'organic', 'none'];
                 next.automation[k] = allowed.includes(v) ? v : next.automation[k];
+            } else if (k === 'fertilizer_land_types') {
+                next.automation[k] = normalizeFertilizerLandTypes(v, next.automation[k]);
+            } else if (k === 'friend_steal_blacklist') {
+                next.automation[k] = normalizeStealPlantBlacklist(v, next.automation[k]);
             } else {
                 next.automation[k] = !!v;
             }
@@ -383,6 +685,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     if (cfg.preferredSeedId !== undefined && cfg.preferredSeedId !== null) {
         next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
+    }
+
+    if (cfg.bagSeedPriority !== undefined) {
+        next.bagSeedPriority = normalizeBagSeedPriority(cfg.bagSeedPriority);
     }
 
     if (cfg.intervals && typeof cfg.intervals === 'object') {
@@ -404,6 +710,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     if (Array.isArray(cfg.friendBlacklist)) {
         next.friendBlacklist = cfg.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    }
+
+    if (Array.isArray(cfg.friendCache)) {
+        next.friendCache = normalizeFriendCache(cfg.friendCache);
     }
 
     if (cfg.ui && typeof cfg.ui === 'object') {
@@ -434,13 +744,27 @@ function getPlantingStrategy(accountId) {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
 }
 
+function getBagSeedPriority(accountId) {
+    return [...(getAccountConfigSnapshot(accountId).bagSeedPriority || [])];
+}
+
+function setPlantingStrategy(accountId, strategy) {
+    if (!ALLOWED_PLANTING_STRATEGIES.includes(strategy)) return false;
+    applyConfigSnapshot({ plantingStrategy: strategy }, { accountId });
+    return true;
+}
+
 function getIntervals(accountId) {
     return { ...getAccountConfigSnapshot(accountId).intervals };
 }
 
 function normalizeIntervals(intervals) {
     const src = (intervals && typeof intervals === 'object') ? intervals : {};
-    const toSec = (v, d) => Math.max(1, Number.parseInt(v, 10) || d);
+    const toSec = (v, d) => {
+        const n = Number.parseInt(v, 10);
+        const base = Number.isFinite(n) ? n : d;
+        return Math.max(1, Math.min(INTERVAL_MAX_SEC, base));
+    };
     const farm = toSec(src.farm, 2);
     const friend = toSec(src.friend, 10);
 
@@ -488,6 +812,26 @@ function setFriendBlacklist(accountId, list) {
     return [...next.friendBlacklist];
 }
 
+function getFriendCache(accountId) {
+    return normalizeFriendCache(getAccountConfigSnapshot(accountId).friendCache);
+}
+
+function setFriendCache(accountId, list) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.friendCache = normalizeFriendCache(list);
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.friendCache];
+}
+
+function updateFriendCache(accountId, newItems) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.friendCache = mergeFriendCache(next.friendCache, newItems);
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.friendCache];
+}
+
 function getUI() {
     return { ...globalConfig.ui };
 }
@@ -509,6 +853,17 @@ function setOfflineReminder(cfg) {
     return getOfflineReminder();
 }
 
+
+function getQrLoginConfig() {
+    return normalizeQrLoginConfig(globalConfig.qrLogin);
+}
+
+function setQrLoginConfig(cfg) {
+    const current = normalizeQrLoginConfig(globalConfig.qrLogin);
+    globalConfig.qrLogin = normalizeQrLoginConfig({ ...current, ...(cfg || {}) });
+    saveGlobalConfig();
+    return getQrLoginConfig();
+}
 // ============ 账号管理 ============
 function loadAccounts() {
     ensureDataDir();
@@ -586,14 +941,23 @@ module.exports = {
     isAutomationOn,
     getPreferredSeed,
     getPlantingStrategy,
+    getBagSeedPriority,
+    setPlantingStrategy,
     getIntervals,
     getFriendQuietHours,
     getFriendBlacklist,
     setFriendBlacklist,
+    getFriendCache,
+    setFriendCache,
+    updateFriendCache,
     getUI,
     setUITheme,
     getOfflineReminder,
     setOfflineReminder,
+    getQrLoginConfig,
+    setQrLoginConfig,
+    getRuntimeClientConfig,
+    setRuntimeClientConfig,
     getAccounts,
     addOrUpdateAccount,
     deleteAccount,

@@ -4,22 +4,17 @@
 
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log, toNum } = require('../utils/utils');
+const { log } = require('../utils/utils');
+const { getDateKey, getRewardSummary, isAlreadyClaimedError, createDailyCooldown } = require('./common');
 
 const DAILY_KEY = 'daily_share';
 const CHECK_COOLDOWN_MS = 10 * 60 * 1000;
 
 let doneDateKey = '';
-let lastCheckAt = 0;
+const lastCheckAt = 0;
 let lastClaimAt = 0;
 
-function getDateKey() {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
+const dailyCooldown = createDailyCooldown({ cooldownMs: CHECK_COOLDOWN_MS });
 
 function markDoneToday() {
     doneDateKey = getDateKey();
@@ -27,26 +22,6 @@ function markDoneToday() {
 
 function isDoneToday() {
     return doneDateKey === getDateKey();
-}
-
-function getRewardSummary(items) {
-    const list = Array.isArray(items) ? items : [];
-    const summary = [];
-    for (const it of list) {
-        const id = toNum(it.id);
-        const count = toNum(it.count);
-        if (count <= 0) continue;
-        if (id === 1 || id === 1001) summary.push(`金币${count}`);
-        else if (id === 2 || id === 1101) summary.push(`经验${count}`);
-        else if (id === 1002) summary.push(`点券${count}`);
-        else summary.push(`物品#${id}x${count}`);
-    }
-    return summary.join('/');
-}
-
-function isAlreadyClaimedError(err) {
-    const msg = String((err && err.message) || '');
-    return msg.includes('code=1009001') || msg.includes('已经领取');
 }
 
 async function checkCanShare() {
@@ -68,14 +43,12 @@ async function claimShareReward() {
 }
 
 async function performDailyShare(force = false) {
-    const now = Date.now();
-    if (!force && isDoneToday()) return false;
-    if (!force && now - lastCheckAt < CHECK_COOLDOWN_MS) return false;
-    lastCheckAt = now;
+    if (!dailyCooldown.canRun(force)) return false;
     try {
         const can = await checkCanShare();
         if (!can || !can.can_share) {
             markDoneToday();
+            dailyCooldown.markRan();
             log('分享', '今日暂无可领取分享礼包', {
                 module: 'task',
                 event: DAILY_KEY,
@@ -85,6 +58,7 @@ async function performDailyShare(force = false) {
         }
         const report = await reportShare();
         if (!report || !report.success) {
+            dailyCooldown.markRan(); // 即使失败也标记已检查，避免重复尝试
             log('分享', '上报分享状态失败', {
                 module: 'task',
                 event: DAILY_KEY,
@@ -98,6 +72,7 @@ async function performDailyShare(force = false) {
         } catch (e) {
             if (isAlreadyClaimedError(e)) {
                 markDoneToday();
+                dailyCooldown.markRan();
                 log('分享', '今日分享奖励已领取', {
                     module: 'task',
                     event: DAILY_KEY,
@@ -125,6 +100,7 @@ async function performDailyShare(force = false) {
         });
         lastClaimAt = Date.now();
         markDoneToday();
+        dailyCooldown.markRan();
         return true;
     } catch (e) {
         log('分享', `领取失败: ${e.message}`, {
@@ -143,5 +119,6 @@ module.exports = {
         doneToday: isDoneToday(),
         lastCheckAt,
         lastClaimAt,
+        ...dailyCooldown.getState(),
     }),
 };

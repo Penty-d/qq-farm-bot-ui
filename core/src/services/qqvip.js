@@ -4,25 +4,19 @@
 
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { log, toNum } = require('../utils/utils');
+const { log } = require('../utils/utils');
+const { getDateKey, getRewardSummary, isAlreadyClaimedError: commonIsAlreadyClaimedError, createDailyCooldown } = require('./common');
 
 const DAILY_KEY = 'vip_daily_gift';
 const CHECK_COOLDOWN_MS = 10 * 60 * 1000;
 
 let doneDateKey = '';
-let lastCheckAt = 0;
 let lastClaimAt = 0;
 let lastResult = '';
 let lastHasGift = null;
 let lastCanClaim = null;
 
-function getDateKey() {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
+const dailyCooldown = createDailyCooldown({ cooldownMs: CHECK_COOLDOWN_MS });
 
 function markDoneToday() {
     doneDateKey = getDateKey();
@@ -32,24 +26,8 @@ function isDoneToday() {
     return doneDateKey === getDateKey();
 }
 
-function getRewardSummary(items) {
-    const list = Array.isArray(items) ? items : [];
-    const summary = [];
-    for (const it of list) {
-        const id = toNum(it.id);
-        const count = toNum(it.count);
-        if (count <= 0) continue;
-        if (id === 1 || id === 1001) summary.push(`金币${count}`);
-        else if (id === 2 || id === 1101) summary.push(`经验${count}`);
-        else if (id === 1002) summary.push(`点券${count}`);
-        else summary.push(`物品#${id}x${count}`);
-    }
-    return summary.join('/');
-}
-
 function isAlreadyClaimedError(err) {
-    const msg = String((err && err.message) || '');
-    return msg.includes('code=1021002') || msg.includes('今日已领取') || msg.includes('已领取');
+    return commonIsAlreadyClaimedError(err);
 }
 
 async function getDailyGiftStatus() {
@@ -65,10 +43,7 @@ async function claimDailyGift() {
 }
 
 async function performDailyVipGift(force = false) {
-    const now = Date.now();
-    if (!force && isDoneToday()) return false;
-    if (!force && now - lastCheckAt < CHECK_COOLDOWN_MS) return false;
-    lastCheckAt = now;
+    if (!dailyCooldown.canRun(force)) return false;
 
     try {
         const status = await getDailyGiftStatus();
@@ -76,6 +51,7 @@ async function performDailyVipGift(force = false) {
         lastCanClaim = !!(status && status.can_claim);
         if (!status || !status.can_claim) {
             markDoneToday();
+            dailyCooldown.markRan();
             lastResult = 'none';
             log('会员', '今日暂无可领取会员礼包', {
                 module: 'task',
@@ -95,11 +71,13 @@ async function performDailyVipGift(force = false) {
         });
         lastClaimAt = Date.now();
         markDoneToday();
+        dailyCooldown.markRan();
         lastResult = 'ok';
         return true;
     } catch (e) {
         if (isAlreadyClaimedError(e)) {
             markDoneToday();
+            dailyCooldown.markRan();
             lastClaimAt = Date.now();
             lastResult = 'ok';
             log('会员', '今日会员礼包已领取', {
@@ -124,7 +102,7 @@ module.exports = {
     getVipDailyState: () => ({
         key: DAILY_KEY,
         doneToday: isDoneToday(),
-        lastCheckAt,
+        ...dailyCooldown.getState(),
         lastClaimAt,
         result: lastResult,
         hasGift: lastHasGift,

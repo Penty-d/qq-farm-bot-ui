@@ -3,6 +3,8 @@
  */
 
 class CookieUtils {
+    static #keyRegexCache = new Map();
+
     static parse(cookieStr) {
         if (!cookieStr) return {};
         return cookieStr.split(';').reduce((acc, curr) => {
@@ -15,7 +17,12 @@ class CookieUtils {
     static getValue(cookies, key) {
         if (!cookies) return null;
         if (Array.isArray(cookies)) cookies = cookies.join('; ');
-        const match = cookies.match(new RegExp(`(^|;\\s*)${key}=([^;]*)`));
+        let regex = this.#keyRegexCache.get(key);
+        if (!regex) {
+            regex = new RegExp(`(^|;\\s*)${key}=([^;]*)`);
+            this.#keyRegexCache.set(key, regex);
+        }
+        const match = cookies.match(regex);
         return match ? match[2] : null;
     }
 
@@ -27,20 +34,21 @@ class CookieUtils {
 }
 
 class HashUtils {
-    static hash(str) {
+    static #djb2(str) {
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
-            hash += (hash << 5) + str.charCodeAt(i);
+            hash = ((hash << 5) + hash) + str.charCodeAt(i);
+            hash = hash & hash;
         }
-        return 2147483647 & hash;
+        return hash >>> 0;
+    }
+
+    static hash(str) {
+        return this.#djb2(str) >>> 1;
     }
 
     static getGTk(pskey) {
-        let gtk = 5381;
-        for (let i = 0; i < pskey.length; i++) {
-            gtk += (gtk << 5) + pskey.charCodeAt(i);
-        }
-        return gtk & 0x7FFFFFFF;
+        return this.#djb2(pskey) >>> 0;
     }
 }
 

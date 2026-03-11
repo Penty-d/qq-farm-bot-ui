@@ -10,6 +10,7 @@ const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, getFriendsList, getFriendLandsDetail, doFriendOperation } = require('../services/friend');
+const { getInteractRecords, extractFriendsFromInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
 const { performDailyMonthCardGift, getMonthCardDailyState } = require('../services/monthcard');
@@ -22,9 +23,10 @@ const { initStatusBar, setStatusPlatform, statusData } = require('../services/st
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
 const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
-const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
+const { connect, reconnect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
+const { validateAutomation, validateIntervals, validateQuietHours } = require('../services/config-validator');
 
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
     process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
@@ -115,6 +117,7 @@ let onWsError = null;
 let wsErrorHandledAt = 0;
 let lastDailyRunDate = '';
 const workerScheduler = createScheduler('worker');
+const INTERVAL_MAX_SEC = 86400;
 
 function isDailyRoutineEnabled(auto) {
     const a = (auto && typeof auto === 'object') ? auto : {};
@@ -163,9 +166,14 @@ function startDailyRoutineTimer() {
 }
 
 function normalizeIntervalRangeSec(minSec, maxSec, fallbackSec) {
-    const fallback = Math.max(1, Number.parseInt(fallbackSec, 10) || 1);
-    let min = Math.max(1, Number.parseInt(minSec, 10) || fallback);
-    let max = Math.max(1, Number.parseInt(maxSec, 10) || fallback);
+    const clampSec = (value, fallbackValue) => {
+        const n = Number.parseInt(value, 10);
+        const base = Number.isFinite(n) ? n : fallbackValue;
+        return Math.max(1, Math.min(INTERVAL_MAX_SEC, base));
+    };
+    const fallback = clampSec(fallbackSec, 1);
+    let min = clampSec(minSec, fallback);
+    let max = clampSec(maxSec, fallback);
     if (min > max) [min, max] = [max, min];
     return { min, max };
 }
@@ -211,6 +219,8 @@ function resetUnifiedSchedule() {
 async function runFarmTick(auto) {
     if (farmTaskRunning) return;
     farmTaskRunning = true;
+    // 立即同步状态，告知前端开始巡查
+    syncStatus();
     const farmMs = randomIntervalMs(
         CONFIG.farmCheckIntervalMin || CONFIG.farmCheckInterval || 2000,
         CONFIG.farmCheckIntervalMax || CONFIG.farmCheckInterval || 2000
@@ -226,12 +236,16 @@ async function runFarmTick(auto) {
     } finally {
         nextFarmRunAt = Date.now() + farmMs;
         farmTaskRunning = false;
+        // 完成后立即同步状态
+        syncStatus();
     }
 }
 
 async function runFriendTick(auto) {
     if (friendTaskRunning) return;
     friendTaskRunning = true;
+    // 立即同步状态，告知前端开始巡查
+    syncStatus();
     const friendMs = randomIntervalMs(
         CONFIG.friendCheckIntervalMin || CONFIG.friendCheckInterval || 10000,
         CONFIG.friendCheckIntervalMax || CONFIG.friendCheckInterval || 10000
@@ -243,6 +257,8 @@ async function runFriendTick(auto) {
     } finally {
         nextFriendRunAt = Date.now() + friendMs;
         friendTaskRunning = false;
+        // 完成后立即同步状态
+        syncStatus();
     }
 }
 
@@ -297,8 +313,74 @@ function stopUnifiedScheduler() {
 
 function applyRuntimeConfig(snapshot, syncNow = false) {
     const prevAuto = getAutomation();
-    applyConfigSnapshot(snapshot || {}, { persist: false });
-    const rev = Number((snapshot || {}).__revision || 0);
+
+    // runtimeClient（全局连接/设备信息）
+    let runtimeClientChanged = false;
+    const rc = (snapshot && snapshot.runtimeClient && typeof snapshot.runtimeClient === 'object')
+        ? snapshot.runtimeClient
+        : null;
+    if (rc) {
+        const nextServerUrl = rc.serverUrl !== undefined ? String(rc.serverUrl || '').trim() : '';
+        const nextClientVersion = rc.clientVersion !== undefined ? String(rc.clientVersion || '').trim() : '';
+        const nextOs = rc.os !== undefined ? String(rc.os || '').trim() : '';
+        const nextDevice = (rc.device_info && typeof rc.device_info === 'object') ? rc.device_info : null;
+
+        if (nextServerUrl && nextServerUrl !== String(CONFIG.serverUrl || '')) {
+            CONFIG.serverUrl = nextServerUrl;
+            runtimeClientChanged = true;
+        }
+        if (nextClientVersion && nextClientVersion !== String(CONFIG.clientVersion || '')) {
+            CONFIG.clientVersion = nextClientVersion;
+            // device_info.client_version 始终与 clientVersion 同步
+            if (!CONFIG.device_info || typeof CONFIG.device_info !== 'object') {
+                CONFIG.device_info = {};
+            }
+            CONFIG.device_info.client_version = nextClientVersion;
+            runtimeClientChanged = true;
+        }
+        if (nextOs && nextOs !== String(CONFIG.os || '')) {
+            CONFIG.os = nextOs;
+            runtimeClientChanged = true;
+        }
+
+        if (nextDevice) {
+            if (!CONFIG.device_info || typeof CONFIG.device_info !== 'object') {
+                CONFIG.device_info = {};
+            }
+            const fields = ['sys_software', 'network', 'memory', 'device_id'];
+            for (const k of fields) {
+                if (nextDevice[k] === undefined) continue;
+                const v = String(nextDevice[k] || '').trim();
+                if (v !== String(CONFIG.device_info[k] || '')) {
+                    CONFIG.device_info[k] = v;
+                    runtimeClientChanged = true;
+                }
+            }
+            // 始终保持一致
+            CONFIG.device_info.client_version = String(CONFIG.clientVersion || '');
+        }
+    }
+
+    // 配置校验
+    const validatedSnapshot = snapshot;
+    if (snapshot && typeof snapshot === 'object') {
+        try {
+            if (snapshot.automation) {
+                snapshot.automation = validateAutomation(snapshot.automation);
+            }
+            if (snapshot.intervals) {
+                snapshot.intervals = validateIntervals(snapshot.intervals);
+            }
+            if (snapshot.friendQuietHours) {
+                snapshot.friendQuietHours = validateQuietHours(snapshot.friendQuietHours);
+            }
+        } catch (e) {
+            log('配置', `配置校验失败: ${e.message}`, { module: 'system', event: 'config_validate' });
+        }
+    }
+    
+    applyConfigSnapshot(validatedSnapshot || {}, { persist: false });
+    const rev = Number((validatedSnapshot || {}).__revision || 0);
     if (rev > 0) appliedConfigRevision = rev;
 
     // 优先使用本次下发的间隔，避免 worker 内部 store 漂移导致回退默认值
@@ -310,6 +392,20 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
     }
 
     if (loginReady) {
+        // runtimeClient 变更：保存后自动重连生效
+        if (runtimeClientChanged) {
+            const jitter = 300 + Math.floor(Math.random() * 700);
+            workerScheduler.setTimeoutTask('runtime_client_reconnect', jitter, () => {
+                if (!isRunning) return;
+                try {
+                    log('系统', '运行时连接配置已更新，准备重连...');
+                    reconnect(null);
+                } catch (e) {
+                    log('系统', `重连失败: ${e.message}`);
+                }
+            });
+        }
+
         refreshFarmCheckLoop(200);
         refreshFriendCheckLoop(200);
         resetUnifiedSchedule();
@@ -545,6 +641,18 @@ async function handleApiCall(msg) {
             case 'getFriends':
                 result = await getFriendsList();
                 break;
+            case 'getInteractRecords':
+                result = await getInteractRecords();
+                break;
+            case 'extractFriendsFromInteractRecords':
+                result = await extractFriendsFromInteractRecords();
+                break;
+            case 'getFriendBlacklist':
+                result = require('../models/store').getFriendBlacklist();
+                break;
+            case 'getFriendCache':
+                result = require('../models/store').getFriendCache();
+                break;
             case 'getFriendLands':
                 result = await getFriendLandsDetail(args[0]);
                 break;
@@ -557,6 +665,9 @@ async function handleApiCall(msg) {
             case 'getBag':
                 result = await require('../services/warehouse').getBagDetail();
                 break;
+            case 'getBagSeeds':
+                result = await require('../services/warehouse').getBagSeeds();
+                break;
             case 'setAutomation': {
                 const payload = args && args[0] ? args[0] : {};
                 applyRuntimeConfig({ automation: { [payload.key]: payload.value } }, true);
@@ -564,7 +675,7 @@ async function handleApiCall(msg) {
                 break;
             }
             case 'doFarmOp':
-                result = await runFarmOperation(args[0]); // opType
+                result = await runFarmOperation(args[0], { automated: false }); // opType
                 break;
             case 'getAnalytics': {
                 const { getPlantRankings } = require('../services/analytics');
@@ -676,9 +787,18 @@ function syncStatus() {
     const limits = require('../services/friend').getOperationLimits();
     const fullStats = require('../services/stats').getStats(statusData, userState, connected, limits);
     const nowMs = Date.now();
+    const farmRemainSec = Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000));
+    const friendRemainSec = Math.max(0, Math.ceil((Number(nextFriendRunAt || 0) - nowMs) / 1000));
+    // 等待巡查：倒计时为0且不在巡查中
+    const farmWaiting = farmRemainSec <= 0 && !farmTaskRunning;
+    const friendWaiting = friendRemainSec <= 0 && !friendTaskRunning;
     fullStats.nextChecks = {
-        farmRemainSec: Math.max(0, Math.ceil((Number(nextFarmRunAt || 0) - nowMs) / 1000)),
-        friendRemainSec: Math.max(0, Math.ceil((Number(nextFriendRunAt || 0) - nowMs) / 1000)),
+        farmRemainSec,
+        friendRemainSec,
+        farmInspecting: farmTaskRunning,
+        friendInspecting: friendTaskRunning,
+        farmWaiting,
+        friendWaiting,
     };
 
     fullStats.automation = getAutomation();

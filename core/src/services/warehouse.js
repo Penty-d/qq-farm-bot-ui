@@ -4,7 +4,7 @@
  */
 
 const protobuf = require('protobufjs');
-const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById } = require('../config/gameConfig');
+const { getFruitName, getPlantByFruitId, getPlantBySeedId, getItemById, getItemImageById, getSeedImageBySeedId } = require('../config/gameConfig');
 const { isAutomationOn } = require('../models/store');
 const { sendMsgAsync, networkEvents, getUserState } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -337,6 +337,8 @@ async function getBagDetail() {
         }
         if (!name) name = `物品${id}`;
         const interactionType = info && info.interaction_type ? String(info.interaction_type) : '';
+        const priceId = info ? (Number(info.price_id) || 0) : 0;
+        const priceUnit = priceId === 1005 ? '金豆豆' : priceId === 1002 ? '点券' : '金';
 
         if (!merged.has(id)) {
             merged.set(id, {
@@ -347,7 +349,9 @@ async function getBagDetail() {
                 image: getItemImageById(id),
                 category,
                 itemType: info ? (Number(info.type) || 0) : 0,
+                priceId,
                 price: info ? (Number(info.price) || 0) : 0,
+                priceUnit,
                 level: info ? (Number(info.level) || 0) : 0,
                 interactionType,
                 hoursText: '',
@@ -368,12 +372,63 @@ async function getBagDetail() {
         return row;
     });
     items.sort((a, b) => {
+        const taRaw = Number(a.itemType || 0);
+        const tbRaw = Number(b.itemType || 0);
+        const typePriority = new Map([
+            [17, 0],
+            [5, 1],
+            [6, 2],
+        ]);
+        const ta = typePriority.has(taRaw) ? typePriority.get(taRaw) : (taRaw > 0 ? (1000 + taRaw) : Number.MAX_SAFE_INTEGER);
+        const tb = typePriority.has(tbRaw) ? typePriority.get(tbRaw) : (tbRaw > 0 ? (1000 + tbRaw) : Number.MAX_SAFE_INTEGER);
+        if (ta !== tb) return ta - tb;
+
         const ca = Number(a.count || 0);
         const cb = Number(b.count || 0);
         if (cb !== ca) return cb - ca;
         return Number(a.id || 0) - Number(b.id || 0);
     });
     return { totalKinds: items.length, items };
+}
+
+/**
+ * 获取背包中的所有种子
+ * @returns {Promise<Array<{seedId: number, name: string, count: number, requiredLevel: number, image: string, plantSize: number}>>} 种子列表
+ */
+async function getBagSeeds() {
+    const bagReply = await getBag();
+    const items = getBagItems(bagReply);
+    const seeds = [];
+    const merged = new Map();
+
+    for (const item of items) {
+        const id = toNum(item.id);
+        const count = toNum(item.count);
+        if (count <= 0) continue;
+
+        const plant = getPlantBySeedId(id);
+        if (!plant) continue;
+
+        if (!merged.has(id)) {
+            merged.set(id, {
+                seedId: id,
+                name: plant.name || `种子${id}`,
+                count: 0,
+                requiredLevel: Number(plant.land_level_need) || 0,
+                image: getSeedImageBySeedId(id),
+                plantSize: Math.max(1, Number(plant.size) || 1),
+            });
+        }
+        merged.get(id).count += count;
+    }
+
+    for (const seed of merged.values()) {
+        seeds.push(seed);
+    }
+
+    // 默认按等级降序排列
+    seeds.sort((a, b) => b.requiredLevel - a.requiredLevel);
+    return seeds;
 }
 
 // ============ 出售逻辑 ============
@@ -480,7 +535,7 @@ async function sellAllFruits() {
         }
         log('仓库', `出售 ${names.join(', ')}${totalGoldEarned > 0 ? `，获得 ${totalGoldEarned} 金币` : ''}`, {
             module: 'warehouse',
-            event: totalGoldEarned > 0 ? 'sell_success' : 'sell_done',
+            event: 'sell_success',
             result: totalGoldEarned > 0 ? 'ok' : 'unknown_gain',
             count: toSell.length,
             gold: totalGoldEarned,
@@ -502,6 +557,7 @@ async function sellAllFruits() {
 module.exports = {
     getBag,
     getBagDetail,
+    getBagSeeds,
     sellItems,
     useItem,
     batchUseItems,

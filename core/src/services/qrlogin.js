@@ -135,20 +135,43 @@ class MiniProgramLoginSession {
         }
     };
 
-    static getHeaders() {
+    static DEFAULT_API_DOMAIN = 'q.qq.com';
+
+    static normalizeApiDomain(input) {
+        const raw = String(input || '').trim();
+        if (!raw) return this.DEFAULT_API_DOMAIN;
+        const normalized = /^https?:\/\//i.test(raw) ? raw : (`https://${raw}`);
+        try {
+            const parsed = new URL(normalized);
+            return String(parsed.host || '').trim() || this.DEFAULT_API_DOMAIN;
+        } catch {
+            return this.DEFAULT_API_DOMAIN;
+        }
+    }
+
+    static resolveApiConfig(options = {}) {
+        const domain = this.normalizeApiDomain(options.apiDomain);
+        return {
+            apiDomain: domain,
+            apiOrigin: `https://${domain}`,
+        };
+    }
+
+    static getHeaders(apiDomain = MiniProgramLoginSession.DEFAULT_API_DOMAIN) {
         return {
             'qua': MiniProgramLoginSession.QUA,
-            'host': 'q.qq.com',
+            'host': apiDomain,
             'accept': 'application/json',
             'content-type': 'application/json',
             'user-agent': ChromeUA
         };
     }
 
-    static async requestLoginCode() {
+    static async requestLoginCode(options = {}) {
         try {
-            const response = await axios.get('https://q.qq.com/ide/devtoolAuth/GetLoginCode', {
-                headers: this.getHeaders()
+            const api = this.resolveApiConfig(options);
+            const response = await axios.get(`${api.apiOrigin}/ide/devtoolAuth/GetLoginCode`, {
+                headers: this.getHeaders(api.apiDomain)
             });
 
             const { code, data } = response.data;
@@ -176,10 +199,11 @@ class MiniProgramLoginSession {
         }
     }
 
-    static async queryStatus(code) {
+    static async queryStatus(code, options = {}) {
         try {
-            const response = await axios.get(`https://q.qq.com/ide/devtoolAuth/syncScanSateGetTicket?code=${code}`, {
-                headers: this.getHeaders()
+            const api = this.resolveApiConfig(options);
+            const response = await axios.get(`${api.apiOrigin}/ide/devtoolAuth/syncScanSateGetTicket?code=${code}`, {
+                headers: this.getHeaders(api.apiDomain)
             });
 
             if (response.status !== 200) {
@@ -203,13 +227,14 @@ class MiniProgramLoginSession {
         }
     }
 
-    static async getAuthCode(ticket, appid = '1112386029') {
+    static async getAuthCode(ticket, appid = '1112386029', options = {}) {
         try {
-            const response = await axios.post('https://q.qq.com/ide/login', {
+            const api = this.resolveApiConfig(options);
+            const response = await axios.post(`${api.apiOrigin}/ide/login`, {
                 appid,
                 ticket
             }, {
-                headers: this.getHeaders()
+                headers: this.getHeaders(api.apiDomain)
             });
 
             if (response.status !== 200) return '';
@@ -224,3 +249,4 @@ class MiniProgramLoginSession {
 }
 
 module.exports = { QRLoginSession, MiniProgramLoginSession };
+

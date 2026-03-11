@@ -74,6 +74,20 @@ function createRuntimeEngine(options = {}) {
     triggerOfflineReminder,
     addOrUpdateAccount: store.addOrUpdateAccount,
     deleteAccount: store.deleteAccount,
+    upsertFriendBlacklist: (accountId, gid) => {
+      const id = String(accountId || '').trim()
+      const friendGid = Number(gid)
+      if (!id || !Number.isFinite(friendGid) || friendGid <= 0) return false
+      const current = store.getFriendBlacklist ? store.getFriendBlacklist(id) : []
+      const list = Array.isArray(current) ? current : []
+      if (list.includes(friendGid)) return false
+      if (store.setFriendBlacklist) {
+        store.setFriendBlacklist(id, [...list, friendGid])
+        return true
+      }
+      return false
+    },
+    broadcastConfigToWorkers,
     onStatusSync: (accountId, status, accountName) => {
       runtimeEvents.emit('status', { accountId, status, accountName })
       if (onStatusSync) onStatusSync(accountId, status, accountName)

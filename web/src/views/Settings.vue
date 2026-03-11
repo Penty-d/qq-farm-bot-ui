@@ -33,7 +33,7 @@ const token = computed(() => {
   return localStorage.getItem('admin_token') || '未登录'
 })
 
-const copyToClipboard = (text: string) => {
+function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text).then(() => {
     toast.success('复制成功')
   }).catch(() => {
@@ -63,6 +63,9 @@ const currentAccountName = computed(() => {
   const acc = accounts.value.find((a: any) => a.id === currentAccountId.value)
   return acc ? (acc.name || acc.nick || acc.id) : null
 })
+const BAG_PRIORITY_STRATEGY = 'bag_priority'
+const DEFAULT_BAG_SEED_FALLBACK_STRATEGY = 'level'
+const BAG_FALLBACK_STRATEGY_VALUES = new Set(['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit'])
 const allFertilizerLandTypes = ['gold', 'black', 'red', 'normal']
 
 const fertilizerLandTypeOptions = [
@@ -104,6 +107,7 @@ const localSettings = ref({
   plantingStrategy: 'preferred',
   preferredSeedId: 0,
   bagSeedPriority: [] as number[],
+  bagSeedFallbackStrategy: DEFAULT_BAG_SEED_FALLBACK_STRATEGY,
   intervals: { farmMin: 2, farmMax: 2, friendMin: 10, friendMax: 10 },
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
   automation: {
@@ -138,6 +142,7 @@ const localSettings = ref({
 
 const friendDisabled = computed(() => !localSettings.value.automation.friend)
 const farmDisabled = computed(() => !localSettings.value.automation.farm_manage)
+const isBagPriorityStrategy = computed(() => localSettings.value.plantingStrategy === BAG_PRIORITY_STRATEGY)
 
 interface StealCropOption {
   plantId: number
@@ -408,6 +413,7 @@ function syncLocalSettings() {
       plantingStrategy: settings.value.plantingStrategy,
       preferredSeedId: settings.value.preferredSeedId,
       bagSeedPriority: settings.value.bagSeedPriority || [],
+      bagSeedFallbackStrategy: settings.value.bagSeedFallbackStrategy || DEFAULT_BAG_SEED_FALLBACK_STRATEGY,
       intervals: settings.value.intervals,
       friendQuietHours: settings.value.friendQuietHours,
       automation: settings.value.automation,
@@ -482,6 +488,12 @@ function syncLocalSettings() {
 
     localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
     localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
+    if (
+      localSettings.value.bagSeedFallbackStrategy === BAG_PRIORITY_STRATEGY
+      || !BAG_FALLBACK_STRATEGY_VALUES.has(localSettings.value.bagSeedFallbackStrategy)
+    ) {
+      localSettings.value.bagSeedFallbackStrategy = DEFAULT_BAG_SEED_FALLBACK_STRATEGY
+    }
 
     // Sync offline settings (global)
     if (settings.value.offlineReminder) {
@@ -529,7 +541,7 @@ const fertilizerOptions = [
 ]
 
 const plantingStrategyOptions = [
-  { label: '优先背包种子', value: 'bag_priority' },
+  { label: '优先背包种子', value: BAG_PRIORITY_STRATEGY },
   { label: '优先种植种子', value: 'preferred' },
   { label: '最高等级作物', value: 'level' },
   { label: '最大经验/时', value: 'max_exp' },
@@ -537,6 +549,10 @@ const plantingStrategyOptions = [
   { label: '最大净利润/时', value: 'max_profit' },
   { label: '最大普通肥净利润/时', value: 'max_fert_profit' },
 ]
+
+const bagSeedFallbackStrategyOptions = computed(() =>
+  plantingStrategyOptions.filter(option => option.value !== BAG_PRIORITY_STRATEGY),
+)
 
 const channelOptions = [
   { label: 'Webhook(自定义接口)', value: 'webhook' },
@@ -628,7 +644,8 @@ const bagSeeds = ref<BagSeedItem[]>([])
 const bagSeedsLoading = ref(false)
 
 async function fetchBagSeeds() {
-  if (!currentAccountId.value) return
+  if (!currentAccountId.value)
+    return
   bagSeedsLoading.value = true
   try {
     const { data } = await api.get('/api/bag/seeds', {
@@ -656,13 +673,15 @@ const sortedBagSeeds = computed(() => {
   return [...bagSeeds.value].sort((a, b) => {
     const pa = priorityMap.has(a.seedId) ? priorityMap.get(a.seedId)! : Number.MAX_SAFE_INTEGER
     const pb = priorityMap.has(b.seedId) ? priorityMap.get(b.seedId)! : Number.MAX_SAFE_INTEGER
-    if (pa !== pb) return pa - pb
+    if (pa !== pb)
+      return pa - pb
     return b.requiredLevel - a.requiredLevel
   })
 })
 
 function moveSeedUp(index: number) {
-  if (index <= 0) return
+  if (index <= 0)
+    return
   const seeds = sortedBagSeeds.value
   const newPriority: number[] = seeds.map(s => s.seedId)
   const a = newPriority[index]!
@@ -674,7 +693,8 @@ function moveSeedUp(index: number) {
 
 function moveSeedDown(index: number) {
   const seeds = sortedBagSeeds.value
-  if (index >= seeds.length - 1) return
+  if (index >= seeds.length - 1)
+    return
   const newPriority: number[] = seeds.map(s => s.seedId)
   const a = newPriority[index]!
   const b = newPriority[index + 1]!
@@ -722,10 +742,19 @@ function onDragEnd() {
 }
 
 watch(() => localSettings.value.plantingStrategy, (newVal) => {
-  if (newVal === 'bag_priority') {
+  if (newVal === BAG_PRIORITY_STRATEGY) {
     fetchBagSeeds()
   }
 }, { immediate: true })
+
+watch(() => localSettings.value.bagSeedFallbackStrategy, (strategy) => {
+  if (
+    strategy === BAG_PRIORITY_STRATEGY
+    || !bagSeedFallbackStrategyOptions.value.some(option => option.value === strategy)
+  ) {
+    localSettings.value.bagSeedFallbackStrategy = DEFAULT_BAG_SEED_FALLBACK_STRATEGY
+  }
+})
 
 const analyticsSortByMap: Record<string, string> = {
   max_exp: 'exp',
@@ -738,7 +767,7 @@ const strategyPreviewLabel = ref<string | null>(null)
 
 watchEffect(async () => {
   const strategy = localSettings.value.plantingStrategy
-  if (strategy === 'preferred' || strategy === 'bag_priority') {
+  if (strategy === 'preferred' || strategy === BAG_PRIORITY_STRATEGY) {
     strategyPreviewLabel.value = null
     return
   }
@@ -783,6 +812,12 @@ async function saveAccountSettings() {
 
   localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
   localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
+  if (
+    localSettings.value.bagSeedFallbackStrategy === BAG_PRIORITY_STRATEGY
+    || !bagSeedFallbackStrategyOptions.value.some(option => option.value === localSettings.value.bagSeedFallbackStrategy)
+  ) {
+    localSettings.value.bagSeedFallbackStrategy = DEFAULT_BAG_SEED_FALLBACK_STRATEGY
+  }
 
   saving.value = true
   try {
@@ -910,8 +945,6 @@ async function handleTestOffline() {
     </div>
 
     <div v-else class="grid grid-cols-1 mt-12 gap-4 text-sm lg:grid-cols-2">
-
-
       <!-- Card 1: Strategy & Automation -->
       <div v-if="currentAccountId" class="card h-full flex flex-col rounded-lg bg-white shadow dark:bg-gray-800">
         <!-- Strategy Header -->
@@ -939,8 +972,14 @@ async function handleTestOffline() {
               label="优先种植种子"
               :options="preferredSeedOptions"
             />
+            <BaseSelect
+              v-else-if="isBagPriorityStrategy"
+              v-model="localSettings.bagSeedFallbackStrategy"
+              label="第二优先策略"
+              :options="bagSeedFallbackStrategyOptions"
+            />
             <!-- 预览区域：与 BaseSelect 同结构同样式，避免切换策略时布局跳动 -->
-            <div v-else-if="localSettings.plantingStrategy !== 'bag_priority'" class="flex flex-col gap-1.5">
+            <div v-else class="flex flex-col gap-1.5">
               <label class="text-sm text-gray-700 font-medium dark:text-gray-300">策略选种预览</label>
               <div
                 class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400"
@@ -952,18 +991,18 @@ async function handleTestOffline() {
           </div>
 
           <!-- 背包种子优先级列表 -->
-          <div v-if="localSettings.plantingStrategy === 'bag_priority'" class="mt-3">
-            <div class="flex items-center justify-between mb-2">
+          <div v-if="isBagPriorityStrategy" class="mt-3">
+            <div class="mb-2 flex items-center justify-between">
               <label class="text-sm text-gray-700 font-medium dark:text-gray-300">背包种子优先级</label>
               <div class="flex items-center gap-2">
                 <button
-                  class="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
+                  class="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-600"
                   @click="fetchBagSeeds"
                 >
                   刷新
                 </button>
                 <button
-                  class="text-xs text-gray-500 hover:text-gray-600 dark:text-gray-400"
+                  class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600"
                   @click="resetBagSeedPriority"
                 >
                   重置排序
@@ -971,18 +1010,18 @@ async function handleTestOffline() {
               </div>
             </div>
 
-            <div v-if="bagSeedsLoading" class="text-center py-4 text-gray-500">
+            <div v-if="bagSeedsLoading" class="py-4 text-center text-gray-500">
               加载中...
             </div>
-            <div v-else-if="sortedBagSeeds.length === 0" class="text-center py-4 text-gray-500 dark:text-gray-400">
+            <div v-else-if="sortedBagSeeds.length === 0" class="py-4 text-center text-gray-500 dark:text-gray-400">
               背包中暂无种子
             </div>
-            <div v-else class="space-y-1 max-h-64 overflow-y-auto">
+            <div v-else class="max-h-64 overflow-y-auto space-y-1">
               <div
                 v-for="(seed, index) in sortedBagSeeds"
                 :key="seed.seedId"
                 draggable="true"
-                class="flex items-center gap-3 p-2 border rounded-lg cursor-grab select-none border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-800/50"
+                class="flex cursor-grab select-none items-center gap-3 border border-gray-200 rounded-lg bg-gray-50 p-2 dark:border-gray-600 dark:bg-gray-800/50"
                 @dragstart="onDragStart($event, index)"
                 @dragover="onDragOver"
                 @drop="onDrop(index)"
@@ -996,16 +1035,16 @@ async function handleTestOffline() {
                   v-if="seed.image"
                   :src="seed.image"
                   :alt="seed.name"
-                  class="w-8 h-8 object-contain pointer-events-none"
+                  class="pointer-events-none h-8 w-8 object-contain"
                 >
-                <div v-else class="w-8 h-8 bg-gray-200 rounded dark:bg-gray-700 pointer-events-none" />
-                <div class="flex-1 min-w-0 pointer-events-none">
+                <div v-else class="pointer-events-none h-8 w-8 rounded bg-gray-200 dark:bg-gray-700" />
+                <div class="pointer-events-none min-w-0 flex-1">
                   <div class="flex items-center gap-2">
                     <span
                       v-if="seed.requiredLevel >= 200"
-                      class="px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded dark:bg-yellow-900/50 dark:text-yellow-400"
+                      class="rounded bg-yellow-100 px-1.5 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400"
                     >活动</span>
-                    <span class="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{{ seed.name }}</span>
+                    <span class="truncate text-sm text-gray-800 font-medium dark:text-gray-200">{{ seed.name }}</span>
                   </div>
                   <div class="text-xs text-gray-500 dark:text-gray-400">
                     数量: {{ seed.count }} | {{ seed.requiredLevel >= 200 ? '活动种子' : `${seed.requiredLevel}级` }}
@@ -1014,14 +1053,14 @@ async function handleTestOffline() {
                 </div>
                 <div class="flex flex-col gap-1">
                   <button
-                    class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30"
+                    class="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
                     :disabled="index === 0"
                     @click.stop="moveSeedUp(index)"
                   >
                     <div class="i-carbon-chevron-up" />
                   </button>
                   <button
-                    class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30"
+                    class="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
                     :disabled="index === sortedBagSeeds.length - 1"
                     @click.stop="moveSeedDown(index)"
                   >
@@ -1030,10 +1069,10 @@ async function handleTestOffline() {
                 </div>
               </div>
             </div>
-            <div class="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <div class="mt-2 text-xs text-gray-500 space-y-1 dark:text-gray-400">
               <p>* 拖拽或点击箭头调整种植优先级</p>
               <p>* 仅支持 1x1 种子，2x2 及以上种子会被跳过</p>
-              <p>* 1x1 种子用完后将自动切换为"最高等级"策略</p>
+              <p>* 背包种子不足后，会按“第二优先策略”继续补种</p>
             </div>
           </div>
 
@@ -1138,7 +1177,7 @@ async function handleTestOffline() {
             <div class="border border-blue-200 rounded-lg bg-blue-50/70 p-3 text-gray-800 shadow-sm dark:border-blue-500/50 dark:bg-[#17243a] dark:text-white">
               <div class="mb-1 flex items-center justify-between gap-3">
                 <div class="min-w-0 flex items-center gap-2">
-                  <div class="h-9 w-9 flex items-center justify-center rounded-lg border border-blue-300/70 bg-white/90 dark:border-blue-500/40 dark:bg-blue-500/20">
+                  <div class="h-9 w-9 flex items-center justify-center border border-blue-300/70 rounded-lg bg-white/90 dark:border-blue-500/40 dark:bg-blue-500/20">
                     <div class="i-carbon-filter text-xl text-blue-700 dark:text-blue-200" />
                   </div>
                   <div class="min-w-0">
@@ -1146,7 +1185,7 @@ async function handleTestOffline() {
                       <div class="truncate text-base font-semibold">
                         排除作物
                       </div>
-                      <div class="rounded-full border border-blue-300 bg-white/95 px-2 py-0.5 text-xs text-blue-700 shadow-sm dark:border-blue-300/60 dark:bg-blue-500/15 dark:text-blue-100">
+                      <div class="border border-blue-300 rounded-full bg-white/95 px-2 py-0.5 text-xs text-blue-700 shadow-sm dark:border-blue-300/60 dark:bg-blue-500/15 dark:text-blue-100">
                         <span class="font-semibold">{{ stealBlacklistCount }} / {{ stealCropOptions.length }}</span>
                       </div>
                     </div>
@@ -1157,7 +1196,7 @@ async function handleTestOffline() {
                 </div>
                 <button
                   type="button"
-                  class="h-9 w-9 flex items-center justify-center rounded-lg border border-blue-300/70 bg-white/90 text-blue-700 transition hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-500/20 dark:text-blue-100 dark:hover:bg-blue-500/30"
+                  class="h-9 w-9 flex items-center justify-center border border-blue-300/70 rounded-lg bg-white/90 text-blue-700 transition dark:border-blue-500/40 dark:bg-blue-500/20 hover:bg-blue-100 dark:text-blue-100 dark:hover:bg-blue-500/30"
                   :aria-expanded="!stealBlacklistCollapsed"
                   @click="stealBlacklistCollapsed = !stealBlacklistCollapsed"
                 >
@@ -1179,7 +1218,7 @@ async function handleTestOffline() {
                     <BaseButton
                       variant="outline"
                       size="sm"
-                      class="!border-blue-300 !text-blue-700 hover:!bg-blue-100 dark:!border-blue-400/70 dark:!text-blue-100 dark:hover:!bg-blue-500/20"
+                      class="!border-blue-300 !text-blue-700 dark:!border-blue-400/70 hover:!bg-blue-100 dark:!text-blue-100 dark:hover:!bg-blue-500/20"
                       :disabled="stealBlacklistCount >= stealCropOptions.length"
                       @click="filterUnselectedStealCrops"
                     >
@@ -1198,58 +1237,60 @@ async function handleTestOffline() {
                 </div>
 
                 <div class="relative mb-2">
-                  <div class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base text-blue-500/70 dark:text-blue-200/70">
+                  <div class="pointer-events-none absolute left-3 top-1/2 text-base text-blue-500/70 -translate-y-1/2 dark:text-blue-200/70">
                     <div class="i-carbon-search" />
                   </div>
                   <input
                     v-model="stealBlacklistSearch"
                     type="text"
                     placeholder="搜索作物名或 Seed ID"
-                    class="w-full border border-blue-200 rounded-lg bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none placeholder:text-gray-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-300/20 dark:border-blue-400/40 dark:bg-[#1c2b45] dark:text-blue-50 dark:placeholder:text-blue-200/50 dark:focus:border-blue-300/70"
+                    class="w-full border border-blue-200 rounded-lg bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none dark:border-blue-400/40 focus:border-blue-400 dark:bg-[#1c2b45] dark:text-blue-50 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-300/20 dark:focus:border-blue-300/70 dark:placeholder:text-blue-200/50"
                   >
                 </div>
 
-              <div v-if="stealCropOptions.length > 0">
-                <div
-                  v-if="filteredStealCropOptions.length > 0"
-                  class="max-h-56 grid grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3"
-                >
-                  <button
-                    v-for="crop in filteredStealCropOptions"
-                    :key="crop.plantId"
-                    type="button"
-                    class="flex w-full cursor-pointer items-center gap-2 rounded border bg-white px-2 py-1.5 text-left text-xs text-gray-700 transition dark:bg-gray-800 dark:text-gray-300"
-                    :class="isCropBlacklisted(crop.plantId)
-                      ? 'border-blue-500 ring-1 ring-blue-300/70 dark:border-blue-400 dark:ring-blue-700/50'
-                      : 'border-gray-200 hover:border-blue-300 dark:border-gray-700 dark:hover:border-blue-700'"
-                    :aria-pressed="isCropBlacklisted(crop.plantId)"
-                    @click="toggleStealBlacklistCrop(crop.plantId)"
+                <div v-if="stealCropOptions.length > 0">
+                  <div
+                    v-if="filteredStealCropOptions.length > 0"
+                    class="grid grid-cols-1 max-h-56 gap-2 overflow-y-auto pr-1 lg:grid-cols-3 sm:grid-cols-2"
                   >
-                    <img
-                      v-if="crop.image"
-                      :src="crop.image"
-                      :alt="crop.name"
-                      class="h-[1.8rem] w-[1.8rem] rounded object-cover"
+                    <button
+                      v-for="crop in filteredStealCropOptions"
+                      :key="crop.plantId"
+                      type="button"
+                      class="w-full flex cursor-pointer items-center gap-2 border rounded bg-white px-2 py-1.5 text-left text-xs text-gray-700 transition dark:bg-gray-800 dark:text-gray-300"
+                      :class="isCropBlacklisted(crop.plantId)
+                        ? 'border-blue-500 ring-1 ring-blue-300/70 dark:border-blue-400 dark:ring-blue-700/50'
+                        : 'border-gray-200 hover:border-blue-300 dark:border-gray-700 dark:hover:border-blue-700'"
+                      :aria-pressed="isCropBlacklisted(crop.plantId)"
+                      @click="toggleStealBlacklistCrop(crop.plantId)"
                     >
-                    <div v-else class="h-[1.8rem] w-[1.8rem] flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                      <div class="i-carbon-image" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate text-xs font-medium">{{ crop.name }}</div>
-                      <div class="text-[11px] text-gray-500 dark:text-gray-400">
-                        Seed ID: {{ crop.seedId === null ? '?' : crop.seedId }}   Lv.{{ crop.level === null ? '?' : crop.level }}
+                      <img
+                        v-if="crop.image"
+                        :src="crop.image"
+                        :alt="crop.name"
+                        class="h-[1.8rem] w-[1.8rem] rounded object-cover"
+                      >
+                      <div v-else class="h-[1.8rem] w-[1.8rem] flex items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        <div class="i-carbon-image" />
                       </div>
-                    </div>
-                  </button>
+                      <div class="min-w-0 flex-1">
+                        <div class="truncate text-xs font-medium">
+                          {{ crop.name }}
+                        </div>
+                        <div class="text-[11px] text-gray-500 dark:text-gray-400">
+                          Seed ID: {{ crop.seedId === null ? '?' : crop.seedId }}   Lv.{{ crop.level === null ? '?' : crop.level }}
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                  <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                    未找到匹配作物，请调整关键词后重试。
+                  </div>
                 </div>
                 <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  未找到匹配作物，请调整关键词后重试。
+                  暂无可选作物，请先等待种子列表加载完成。
                 </div>
               </div>
-              <div v-else class="rounded bg-white px-2 py-2 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                暂无可选作物，请先等待种子列表加载完成。
-              </div>
-            </div>
             </div>
             <div class="border border-amber-200 rounded bg-amber-50/60 p-3 dark:border-amber-800/60 dark:bg-amber-900/10">
               <div class="mb-2 text-sm text-amber-800 font-medium dark:text-amber-300">
@@ -1602,15 +1643,15 @@ async function handleTestOffline() {
               type="text"
               :value="token"
               readonly
-              class="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-            />
+              class="flex-1 border border-gray-200 rounded-lg bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+            >
             <BaseButton
               v-if="token !== '未登录'"
               variant="secondary"
               size="sm"
               @click="copyToClipboard(token)"
             >
-              <div class="i-carbon-copy mr-1"></div>
+              <div class="i-carbon-copy mr-1" />
               复制
             </BaseButton>
           </div>

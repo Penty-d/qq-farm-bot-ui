@@ -593,6 +593,7 @@ function startAdminServer(dataProvider) {
             const strategy = store.getPlantingStrategy(id);
             const preferredSeed = store.getPreferredSeed(id);
             const bagSeedPriority = store.getBagSeedPriority(id);
+            const bagSeedFallbackStrategy = store.getBagSeedFallbackStrategy(id);
             const friendQuietHours = store.getFriendQuietHours(id);
             const automation = store.getAutomation(id);
             const ui = store.getUI();
@@ -605,7 +606,7 @@ function startAdminServer(dataProvider) {
             const runtimeClient = store.getRuntimeClientConfig
                 ? store.getRuntimeClientConfig()
                 : null;
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, bagSeedFallbackStrategy, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

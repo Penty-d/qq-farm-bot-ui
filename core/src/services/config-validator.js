@@ -126,10 +126,16 @@ const ACCOUNT_CONFIG_SCHEMA = {
         intervals: INTERVALS_SCHEMA,
         plantingStrategy: {
             type: 'string',
-            oneOf: ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit'],
+            oneOf: ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'],
             default: 'preferred',
         },
         preferredSeedId: { type: 'number', min: 0, default: 0 },
+        bagSeedPriority: { type: 'array', items: { type: 'number', min: 1 }, default: [] },
+        bagSeedFallbackStrategy: {
+            type: 'string',
+            oneOf: ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit'],
+            default: 'level',
+        },
         friendQuietHours: QUIET_HOURS_SCHEMA,
         friendBlacklist: { type: 'array', items: { type: 'number' }, default: [] },
     },

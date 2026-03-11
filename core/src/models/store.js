@@ -10,6 +10,7 @@ const { readTextFile, readJsonFile, writeJsonFileAtomic } = require('../services
 const STORE_FILE = getDataFile('store.json');
 const ACCOUNTS_FILE = getDataFile('accounts.json');
 const ALLOWED_PLANTING_STRATEGIES = ['preferred', 'level', 'max_exp', 'max_fert_exp', 'max_profit', 'max_fert_profit', 'bag_priority'];
+const ALLOWED_BAG_SEED_FALLBACK_STRATEGIES = ALLOWED_PLANTING_STRATEGIES.filter(strategy => strategy !== 'bag_priority');
 const PUSHOO_CHANNELS = new Set([
     'webhook', 'qmsg', 'serverchan', 'pushplus', 'pushplushxtrip',
     'dingtalk', 'wecom', 'bark', 'gocqhttp', 'onebot', 'atri',
@@ -83,6 +84,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
     plantingStrategy: 'preferred',
     preferredSeedId: 0,
     bagSeedPriority: [],
+    bagSeedFallbackStrategy: 'level',
     intervals: {
         farm: 2,
         friend: 10,
@@ -340,6 +342,12 @@ function normalizeBagSeedPriority(input) {
     return normalized;
 }
 
+function normalizeBagSeedFallbackStrategy(input, fallback = DEFAULT_ACCOUNT_CONFIG.bagSeedFallbackStrategy) {
+    const strategy = String(input || '').trim();
+    if (ALLOWED_BAG_SEED_FALLBACK_STRATEGIES.includes(strategy)) return strategy;
+    return fallback;
+}
+
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const srcAutomation = (base && base.automation && typeof base.automation === 'object')
         ? base.automation
@@ -369,6 +377,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
         bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
+        bagSeedFallbackStrategy: normalizeBagSeedFallbackStrategy(base.bagSeedFallbackStrategy),
     };
 }
 
@@ -409,6 +418,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (src.bagSeedPriority !== undefined) {
         cfg.bagSeedPriority = normalizeBagSeedPriority(src.bagSeedPriority);
+    }
+
+    if (src.bagSeedFallbackStrategy !== undefined) {
+        cfg.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(src.bagSeedFallbackStrategy, cfg.bagSeedFallbackStrategy);
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -602,6 +615,8 @@ function getConfigSnapshot(accountId) {
         automation: { ...cfg.automation },
         plantingStrategy: cfg.plantingStrategy,
         preferredSeedId: cfg.preferredSeedId,
+        bagSeedPriority: [...(cfg.bagSeedPriority || [])],
+        bagSeedFallbackStrategy: cfg.bagSeedFallbackStrategy,
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         friendBlacklist: [...(cfg.friendBlacklist || [])],
@@ -645,6 +660,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     if (cfg.bagSeedPriority !== undefined) {
         next.bagSeedPriority = normalizeBagSeedPriority(cfg.bagSeedPriority);
+    }
+
+    if (cfg.bagSeedFallbackStrategy !== undefined) {
+        next.bagSeedFallbackStrategy = normalizeBagSeedFallbackStrategy(cfg.bagSeedFallbackStrategy, next.bagSeedFallbackStrategy);
     }
 
     if (cfg.intervals && typeof cfg.intervals === 'object') {
@@ -698,6 +717,10 @@ function getPlantingStrategy(accountId) {
 
 function getBagSeedPriority(accountId) {
     return [...(getAccountConfigSnapshot(accountId).bagSeedPriority || [])];
+}
+
+function getBagSeedFallbackStrategy(accountId) {
+    return normalizeBagSeedFallbackStrategy(getAccountConfigSnapshot(accountId).bagSeedFallbackStrategy);
 }
 
 function setPlantingStrategy(accountId, strategy) {
@@ -874,6 +897,7 @@ module.exports = {
     getPreferredSeed,
     getPlantingStrategy,
     getBagSeedPriority,
+    getBagSeedFallbackStrategy,
     setPlantingStrategy,
     getIntervals,
     getFriendQuietHours,

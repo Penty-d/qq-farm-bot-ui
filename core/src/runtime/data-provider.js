@@ -127,10 +127,12 @@ function createDataProvider(options) {
             const plantingStrategy = (body.plantingStrategy !== undefined) ? body.plantingStrategy : body.strategy;
             const preferredSeedId = (body.preferredSeedId !== undefined) ? body.preferredSeedId : body.seedId;
             const bagSeedPriority = body.bagSeedPriority;
+            const bagSeedFallbackStrategy = body.bagSeedFallbackStrategy;
             const snapshot = {
                 plantingStrategy,
                 preferredSeedId,
                 bagSeedPriority,
+                bagSeedFallbackStrategy,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
             };
@@ -141,6 +143,7 @@ function createDataProvider(options) {
                 strategy: store.getPlantingStrategy(accountId),
                 preferredSeed: store.getPreferredSeed(accountId),
                 bagSeedPriority: store.getBagSeedPriority(accountId),
+                bagSeedFallbackStrategy: store.getBagSeedFallbackStrategy(accountId),
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
                 configRevision: rev,

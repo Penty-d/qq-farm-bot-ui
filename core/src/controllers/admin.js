@@ -248,6 +248,21 @@ function startAdminServer(dataProvider) {
         return resolveAccId(req.headers['x-account-id']);
     }
 
+    function buildKnownFriendGidSettings(accountId) {
+        return {
+            knownFriendGids: store.getKnownFriendGids ? store.getKnownFriendGids(accountId) : [],
+            knownFriendGidSyncCooldownSec: store.getKnownFriendGidSyncCooldownSec
+                ? store.getKnownFriendGidSyncCooldownSec(accountId)
+                : 600,
+        };
+    }
+
+    function broadcastAccountConfig(accountId) {
+        if (provider && typeof provider.broadcastConfig === 'function') {
+            provider.broadcastConfig(accountId);
+        }
+    }
+
     // API: 完整状态
     app.get('/api/status', async (req, res) => {
         const id = getAccId(req);
@@ -371,11 +386,79 @@ function startAdminServer(dataProvider) {
             next = [...current, gid];
         }
         const saved = store.setFriendBlacklist ? store.setFriendBlacklist(id, next) : next;
-        // 同步配置到 worker 进程
-        if (provider && typeof provider.broadcastConfig === 'function') {
-            provider.broadcastConfig(id);
-        }
+        broadcastAccountConfig(id);
         res.json({ ok: true, data: saved });
+    });
+
+    app.get('/api/friend-known-gids', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            return res.json({ ok: true, data: buildKnownFriendGidSettings(id) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/friend-known-gids', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            if (body.knownFriendGids !== undefined && store.setKnownFriendGids) {
+                store.setKnownFriendGids(id, body.knownFriendGids);
+            }
+            if (body.knownFriendGidSyncCooldownSec !== undefined && store.setKnownFriendGidSyncCooldownSec) {
+                store.setKnownFriendGidSyncCooldownSec(id, body.knownFriendGidSyncCooldownSec);
+            }
+            broadcastAccountConfig(id);
+            return res.json({ ok: true, data: buildKnownFriendGidSettings(id) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/friend-known-gids/add', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        const gid = Number((req.body || {}).gid);
+        if (!Number.isFinite(gid) || gid <= 0) {
+            return res.status(400).json({ ok: false, error: 'GID 无效' });
+        }
+        try {
+            const current = store.getKnownFriendGids ? store.getKnownFriendGids(id) : [];
+            const next = Array.isArray(current) ? [...current, gid] : [gid];
+            if (store.setKnownFriendGids) {
+                store.setKnownFriendGids(id, next);
+            }
+            if ((req.body || {}).knownFriendGidSyncCooldownSec !== undefined && store.setKnownFriendGidSyncCooldownSec) {
+                store.setKnownFriendGidSyncCooldownSec(id, (req.body || {}).knownFriendGidSyncCooldownSec);
+            }
+            broadcastAccountConfig(id);
+            return res.json({ ok: true, data: buildKnownFriendGidSettings(id) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/friend-known-gids/remove', (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        const gid = Number((req.body || {}).gid);
+        if (!Number.isFinite(gid) || gid <= 0) {
+            return res.status(400).json({ ok: false, error: 'GID 无效' });
+        }
+        try {
+            const current = store.getKnownFriendGids ? store.getKnownFriendGids(id) : [];
+            const next = Array.isArray(current) ? current.filter(item => Number(item) !== gid) : [];
+            if (store.setKnownFriendGids) {
+                store.setKnownFriendGids(id, next);
+            }
+            broadcastAccountConfig(id);
+            return res.json({ ok: true, data: buildKnownFriendGidSettings(id) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
     });
 
     // API: 种子列表
@@ -594,6 +677,10 @@ function startAdminServer(dataProvider) {
             const preferredSeed = store.getPreferredSeed(id);
             const bagSeedPriority = store.getBagSeedPriority(id);
             const friendQuietHours = store.getFriendQuietHours(id);
+            const knownFriendGids = store.getKnownFriendGids ? store.getKnownFriendGids(id) : [];
+            const knownFriendGidSyncCooldownSec = store.getKnownFriendGidSyncCooldownSec
+                ? store.getKnownFriendGidSyncCooldownSec(id)
+                : 600;
             const automation = store.getAutomation(id);
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
@@ -602,10 +689,26 @@ function startAdminServer(dataProvider) {
             const qrLogin = store.getQrLoginConfig
                 ? store.getQrLoginConfig()
                 : { apiDomain: 'q.qq.com' };
-            const runtimeClient = store.getRuntimeClientConfig
-                ? store.getRuntimeClientConfig()
-                : null;
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
+            res.json({
+                ok: true,
+                data: {
+                    intervals,
+                    strategy,
+                    preferredSeed,
+                    bagSeedPriority,
+                    bagSeedFallbackStrategy,
+                    friendQuietHours,
+                    knownFriendGids,
+                    knownFriendGidSyncCooldownSec,
+                    automation,
+                    ui,
+                    offlineReminder,
+                    qrLogin,
+                    runtimeClient: store.getRuntimeClientConfig
+                        ? store.getRuntimeClientConfig()
+                        : null,
+                },
+            });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

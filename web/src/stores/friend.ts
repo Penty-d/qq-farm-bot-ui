@@ -2,6 +2,31 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api'
 
+export interface KnownFriendSettings {
+  knownFriendGids: number[]
+  knownFriendGidSyncCooldownSec: number
+}
+
+function normalizeKnownFriendGids(input: unknown): number[] {
+  const source = Array.isArray(input) ? input : []
+  const normalized: number[] = []
+  for (const item of source) {
+    const value = Number.parseInt(String(item ?? ''), 10)
+    if (!Number.isFinite(value) || value <= 0)
+      continue
+    if (normalized.includes(value))
+      continue
+    normalized.push(value)
+  }
+  return normalized
+}
+
+function normalizeKnownFriendGidSyncCooldownSec(input: unknown, fallback = 600) {
+  const value = Number.parseInt(String(input ?? ''), 10)
+  const base = Number.isFinite(value) ? value : fallback
+  return Math.max(30, Math.min(86400, base))
+}
+
 export const useFriendStore = defineStore('friend', () => {
   const friends = ref<any[]>([])
   const loading = ref(false)
@@ -11,6 +36,24 @@ export const useFriendStore = defineStore('friend', () => {
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
   const interactError = ref('')
+  const knownFriendGids = ref<number[]>([])
+  const knownFriendGidSyncCooldownSec = ref(600)
+  const knownFriendSettingsLoading = ref(false)
+  const knownFriendSettingsSaving = ref(false)
+
+  function applyKnownFriendSettings(data: Partial<KnownFriendSettings> | null | undefined) {
+    const source = data || {}
+    knownFriendGids.value = normalizeKnownFriendGids(source.knownFriendGids)
+    knownFriendGidSyncCooldownSec.value = normalizeKnownFriendGidSyncCooldownSec(
+      source.knownFriendGidSyncCooldownSec,
+      knownFriendGidSyncCooldownSec.value,
+    )
+  }
+
+  function clearKnownFriendSettings() {
+    knownFriendGids.value = []
+    knownFriendGidSyncCooldownSec.value = 600
+  }
 
   function buildPlantSummaryFromDetail(lands: any[], summary: any) {
     let stealNum = 0
@@ -129,6 +172,80 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  async function fetchKnownFriendSettings(accountId: string) {
+    if (!accountId)
+      return
+    knownFriendSettingsLoading.value = true
+    try {
+      const res = await api.get('/api/friend-known-gids', {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        applyKnownFriendSettings(res.data.data)
+      }
+    }
+    finally {
+      knownFriendSettingsLoading.value = false
+    }
+  }
+
+  async function saveKnownFriendSettings(accountId: string, payload: Partial<KnownFriendSettings>) {
+    if (!accountId)
+      return
+    knownFriendSettingsSaving.value = true
+    try {
+      const res = await api.post('/api/friend-known-gids', payload, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        applyKnownFriendSettings(res.data.data)
+      }
+      return res.data?.data || null
+    }
+    finally {
+      knownFriendSettingsSaving.value = false
+    }
+  }
+
+  async function addKnownFriendGid(accountId: string, gid: number, cooldownSec?: number) {
+    if (!accountId || !gid)
+      return
+    knownFriendSettingsSaving.value = true
+    try {
+      const res = await api.post('/api/friend-known-gids/add', {
+        gid,
+        knownFriendGidSyncCooldownSec: cooldownSec,
+      }, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        applyKnownFriendSettings(res.data.data)
+      }
+      return res.data?.data || null
+    }
+    finally {
+      knownFriendSettingsSaving.value = false
+    }
+  }
+
+  async function removeKnownFriendGid(accountId: string, gid: number) {
+    if (!accountId || !gid)
+      return
+    knownFriendSettingsSaving.value = true
+    try {
+      const res = await api.post('/api/friend-known-gids/remove', { gid }, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        applyKnownFriendSettings(res.data.data)
+      }
+      return res.data?.data || null
+    }
+    finally {
+      knownFriendSettingsSaving.value = false
+    }
+  }
+
   async function fetchFriendLands(accountId: string, friendId: string) {
     if (!accountId || !friendId)
       return
@@ -169,10 +286,19 @@ export const useFriendStore = defineStore('friend', () => {
     interactRecords,
     interactLoading,
     interactError,
+    knownFriendGids,
+    knownFriendGidSyncCooldownSec,
+    knownFriendSettingsLoading,
+    knownFriendSettingsSaving,
     fetchFriends,
     fetchBlacklist,
     toggleBlacklist,
     fetchInteractRecords,
+    fetchKnownFriendSettings,
+    saveKnownFriendSettings,
+    addKnownFriendGid,
+    removeKnownFriendGid,
+    clearKnownFriendSettings,
     fetchFriendLands,
     operate,
   }

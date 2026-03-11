@@ -41,6 +41,10 @@ function createRuntimeState(options) {
             preferredSeedId: store.getPreferredSeed(accountId),
             intervals: store.getIntervals(accountId),
             friendQuietHours: store.getFriendQuietHours(accountId),
+            knownFriendGids: store.getKnownFriendGids ? store.getKnownFriendGids(accountId) : [],
+            knownFriendGidSyncCooldownSec: store.getKnownFriendGidSyncCooldownSec
+                ? store.getKnownFriendGidSyncCooldownSec(accountId)
+                : 600,
             friendBlacklist: store.getFriendBlacklist(accountId),
             runtimeClient: store.getRuntimeClientConfig ? store.getRuntimeClientConfig() : null,
             __revision: configRevision,

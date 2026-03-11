@@ -22,6 +22,7 @@ const DEFAULT_OFFLINE_DELETE_SEC = 1;
 const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
 const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
 const DEFAULT_STEAL_PLANT_BLACKLIST = [];
+const DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC = 600;
 const DEFAULT_OFFLINE_REMINDER = {
     channel: 'webhook',
     reloginUrlMode: 'none',
@@ -50,6 +51,24 @@ const DEFAULT_RUNTIME_CLIENT = {
         device_id: (BASE_CONFIG.device_info && BASE_CONFIG.device_info.device_id) ? BASE_CONFIG.device_info.device_id : 'iPhone X<iPhone18,3>',
     },
 };
+
+function normalizeKnownFriendGids(input, fallback = []) {
+    const source = Array.isArray(input) ? input : fallback;
+    const normalized = [];
+    for (const item of source) {
+        const value = Number.parseInt(item, 10);
+        if (!Number.isFinite(value) || value <= 0) continue;
+        if (normalized.includes(value)) continue;
+        normalized.push(value);
+    }
+    return normalized;
+}
+
+function normalizeKnownFriendGidSyncCooldownSec(input, fallback = DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC) {
+    const value = Number.parseInt(input, 10);
+    const base = Number.isFinite(value) ? value : fallback;
+    return Math.max(30, Math.min(INTERVAL_MAX_SEC, base));
+}
 // ============ 全局配置 ============
 const DEFAULT_ACCOUNT_CONFIG = {
     automation: {
@@ -96,6 +115,8 @@ const DEFAULT_ACCOUNT_CONFIG = {
         start: '23:00',
         end: '07:00',
     },
+    knownFriendGids: [],
+    knownFriendGidSyncCooldownSec: DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC,
     friendBlacklist: [],
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
@@ -363,6 +384,8 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
         automation,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
+        knownFriendGids: normalizeKnownFriendGids(base.knownFriendGids),
+        knownFriendGidSyncCooldownSec: normalizeKnownFriendGidSyncCooldownSec(base.knownFriendGidSyncCooldownSec),
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
@@ -428,6 +451,17 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
             start: normalizeTimeString(src.friendQuietHours.start, old.start || '23:00'),
             end: normalizeTimeString(src.friendQuietHours.end, old.end || '07:00'),
         };
+    }
+
+    if (src.knownFriendGids !== undefined) {
+        cfg.knownFriendGids = normalizeKnownFriendGids(src.knownFriendGids, cfg.knownFriendGids);
+    }
+
+    if (src.knownFriendGidSyncCooldownSec !== undefined) {
+        cfg.knownFriendGidSyncCooldownSec = normalizeKnownFriendGidSyncCooldownSec(
+            src.knownFriendGidSyncCooldownSec,
+            cfg.knownFriendGidSyncCooldownSec,
+        );
     }
 
     if (Array.isArray(src.friendBlacklist)) {
@@ -604,6 +638,8 @@ function getConfigSnapshot(accountId) {
         preferredSeedId: cfg.preferredSeedId,
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
+        knownFriendGids: [...(cfg.knownFriendGids || [])],
+        knownFriendGidSyncCooldownSec: cfg.knownFriendGidSyncCooldownSec,
         friendBlacklist: [...(cfg.friendBlacklist || [])],
         ui: { ...globalConfig.ui },
         qrLogin: normalizeQrLoginConfig(globalConfig.qrLogin),
@@ -662,6 +698,17 @@ function applyConfigSnapshot(snapshot, options = {}) {
             start: normalizeTimeString(cfg.friendQuietHours.start, old.start || '23:00'),
             end: normalizeTimeString(cfg.friendQuietHours.end, old.end || '07:00'),
         };
+    }
+
+    if (cfg.knownFriendGids !== undefined) {
+        next.knownFriendGids = normalizeKnownFriendGids(cfg.knownFriendGids, next.knownFriendGids);
+    }
+
+    if (cfg.knownFriendGidSyncCooldownSec !== undefined) {
+        next.knownFriendGidSyncCooldownSec = normalizeKnownFriendGidSyncCooldownSec(
+            cfg.knownFriendGidSyncCooldownSec,
+            next.knownFriendGidSyncCooldownSec,
+        );
     }
 
     if (Array.isArray(cfg.friendBlacklist)) {
@@ -750,6 +797,33 @@ function normalizeTimeString(v, fallback) {
 
 function getFriendQuietHours(accountId) {
     return { ...getAccountConfigSnapshot(accountId).friendQuietHours };
+}
+
+function getKnownFriendGids(accountId) {
+    return [...(getAccountConfigSnapshot(accountId).knownFriendGids || [])];
+}
+
+function setKnownFriendGids(accountId, list) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.knownFriendGids = normalizeKnownFriendGids(list, next.knownFriendGids);
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.knownFriendGids];
+}
+
+function getKnownFriendGidSyncCooldownSec(accountId) {
+    return normalizeKnownFriendGidSyncCooldownSec(getAccountConfigSnapshot(accountId).knownFriendGidSyncCooldownSec);
+}
+
+function setKnownFriendGidSyncCooldownSec(accountId, sec) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.knownFriendGidSyncCooldownSec = normalizeKnownFriendGidSyncCooldownSec(
+        sec,
+        next.knownFriendGidSyncCooldownSec,
+    );
+    setAccountConfigSnapshot(accountId, next);
+    return next.knownFriendGidSyncCooldownSec;
 }
 
 function getFriendBlacklist(accountId) {
@@ -877,6 +951,10 @@ module.exports = {
     setPlantingStrategy,
     getIntervals,
     getFriendQuietHours,
+    getKnownFriendGids,
+    setKnownFriendGids,
+    getKnownFriendGidSyncCooldownSec,
+    setKnownFriendGidSyncCooldownSec,
     getFriendBlacklist,
     setFriendBlacklist,
     getUI,

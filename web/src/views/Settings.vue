@@ -1133,6 +1133,7 @@ async function handleTestOffline() {
             <BaseSwitch v-model="localSettings.automation.friend_bad" label="自动捣乱" :disabled="friendDisabled" />
             <BaseSwitch v-model="localSettings.automation.friend_help_exp_limit" label="经验上限停止帮忙" :disabled="friendDisabled" />
           </div>
+
           <!-- Steal Crop Blacklist + Fertilizer -->
           <div class="space-y-3">
             <div class="border border-blue-200 rounded-lg bg-blue-50/70 p-3 text-gray-800 shadow-sm dark:border-blue-500/50 dark:bg-[#17243a] dark:text-white">

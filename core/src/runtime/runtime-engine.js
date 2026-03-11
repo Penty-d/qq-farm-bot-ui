@@ -87,6 +87,37 @@ function createRuntimeEngine(options = {}) {
       }
       return false
     },
+    upsertKnownFriendGids: (accountId, gids) => {
+      const id = String(accountId || '').trim()
+      if (!id || !store.getKnownFriendGids || !store.setKnownFriendGids)
+        return false
+
+      const current = store.getKnownFriendGids(id)
+      const currentList = Array.isArray(current) ? current : []
+      const nextList = Array.isArray(gids)
+        ? gids.map(Number).filter(gid => Number.isFinite(gid) && gid > 0)
+        : []
+      const merged = [...new Set([...currentList, ...nextList])]
+      if (merged.length === currentList.length && merged.every((gid, index) => gid === currentList[index]))
+        return false
+
+      store.setKnownFriendGids(id, merged)
+      return true
+    },
+    removeKnownFriendGid: (accountId, gid) => {
+      const id = String(accountId || '').trim()
+      const friendGid = Number(gid)
+      if (!id || !Number.isFinite(friendGid) || friendGid <= 0 || !store.getKnownFriendGids || !store.setKnownFriendGids)
+        return false
+
+      const current = store.getKnownFriendGids(id)
+      const currentList = Array.isArray(current) ? current : []
+      if (!currentList.includes(friendGid))
+        return false
+
+      store.setKnownFriendGids(id, currentList.filter(item => item !== friendGid))
+      return true
+    },
     broadcastConfigToWorkers,
     onStatusSync: (accountId, status, accountName) => {
       runtimeEvents.emit('status', { accountId, status, accountName })

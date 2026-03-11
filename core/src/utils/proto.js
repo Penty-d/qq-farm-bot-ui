@@ -106,6 +106,7 @@ const typeMappings = [
     // 好友
     ['GetAllFriendsRequest', 'gamepb.friendpb.GetAllRequest'],
     ['GetAllFriendsReply', 'gamepb.friendpb.GetAllReply'],
+    ['GetGameFriendsRequest', 'gamepb.friendpb.GetGameFriendsRequest'],
     ['SyncAllRequest', 'gamepb.friendpb.SyncAllRequest'],
     ['SyncAllReply', 'gamepb.friendpb.SyncAllReply'],
     ['SyncAllFriendsRequest', 'gamepb.friendpb.SyncAllRequest'],

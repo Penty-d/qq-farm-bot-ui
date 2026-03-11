@@ -49,6 +49,11 @@ message GetAllReply {
     int64 application_count = 3;
 }
 
+// --- 获取指定游戏好友 ---
+message GetGameFriendsRequest {
+    repeated int64 gids = 1;
+}
+
 // --- 同步好友 (带 open_ids) ---
 message SyncAllRequest {
     // field 1 reserved

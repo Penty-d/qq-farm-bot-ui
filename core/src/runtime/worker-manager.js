@@ -19,6 +19,8 @@ function createWorkerManager(options) {
         addOrUpdateAccount,
         deleteAccount,
         upsertFriendBlacklist,
+        upsertKnownFriendGids,
+        removeKnownFriendGid,
         broadcastConfigToWorkers,
         onStatusSync,
         onWorkerLog,
@@ -306,6 +308,24 @@ function createWorkerManager(options) {
             if (typeof upsertFriendBlacklist !== 'function') return;
             try {
                 const changed = !!upsertFriendBlacklist(accountId, gid);
+                if (changed && typeof broadcastConfigToWorkers === 'function') {
+                    broadcastConfigToWorkers(accountId);
+                }
+            } catch {}
+        } else if (msg.type === 'known_friend_gids_sync') {
+            const gids = Array.isArray(msg.gids) ? msg.gids : [];
+            if (typeof upsertKnownFriendGids !== 'function') return;
+            try {
+                const changed = !!upsertKnownFriendGids(accountId, gids);
+                if (changed && typeof broadcastConfigToWorkers === 'function') {
+                    broadcastConfigToWorkers(accountId);
+                }
+            } catch {}
+        } else if (msg.type === 'known_friend_gid_remove') {
+            const gid = Number(msg.gid);
+            if (!Number.isFinite(gid) || gid <= 0 || typeof removeKnownFriendGid !== 'function') return;
+            try {
+                const changed = !!removeKnownFriendGid(accountId, gid);
                 if (changed && typeof broadcastConfigToWorkers === 'function') {
                     broadcastConfigToWorkers(accountId);
                 }

@@ -34,11 +34,49 @@ const token = computed(() => {
 })
 
 const copyToClipboard = (text: string) => {
-  navigator.clipboard.writeText(text).then(() => {
-    toast.success('复制成功')
-  }).catch(() => {
+  // 检查是否支持navigator.clipboard
+  if (navigator.clipboard && window.isSecureContext) {
+    // 现代浏览器，使用clipboard API
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success('复制成功')
+    }).catch(() => {
+      // 降级到传统方法
+      fallbackCopyTextToClipboard(text)
+    })
+  } else {
+    // 不支持clipboard API，使用传统方法
+    fallbackCopyTextToClipboard(text)
+  }
+}
+
+const fallbackCopyTextToClipboard = (text: string) => {
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  
+  // 确保文本区域不可见
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-999999px'
+  textArea.style.top = '-999999px'
+  document.body.appendChild(textArea)
+  
+  // 选择文本
+  textArea.focus()
+  textArea.select()
+  
+  try {
+    // 执行复制命令
+    const successful = document.execCommand('copy')
+    if (successful) {
+      toast.success('复制成功')
+    } else {
+      toast.error('复制失败，请手动复制')
+    }
+  } catch (err) {
     toast.error('复制失败，请手动复制')
-  })
+  } finally {
+    // 清理
+    document.body.removeChild(textArea)
+  }
 }
 
 const modalVisible = ref(false)

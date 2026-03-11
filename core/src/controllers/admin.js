@@ -402,6 +402,18 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 背包种子列表
+    app.get('/api/bag/seeds', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false });
+        try {
+            const data = await provider.getBagSeeds(id);
+            res.json({ ok: true, data });
+        } catch (e) {
+            handleApiError(res, e);
+        }
+    });
+
     // API: 每日礼包状态总览
     app.get('/api/daily-gifts', async (req, res) => {
         const id = getAccId(req);
@@ -580,6 +592,7 @@ function startAdminServer(dataProvider) {
             const intervals = store.getIntervals(id);
             const strategy = store.getPlantingStrategy(id);
             const preferredSeed = store.getPreferredSeed(id);
+            const bagSeedPriority = store.getBagSeedPriority(id);
             const friendQuietHours = store.getFriendQuietHours(id);
             const automation = store.getAutomation(id);
             const ui = store.getUI();
@@ -592,7 +605,7 @@ function startAdminServer(dataProvider) {
             const runtimeClient = store.getRuntimeClientConfig
                 ? store.getRuntimeClientConfig()
                 : null;
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

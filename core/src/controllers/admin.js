@@ -415,7 +415,7 @@ function startAdminServer(dataProvider) {
             const input = req.body.gids;
             let gids = [];
             if (typeof input === 'string') {
-                gids = input.split(/[,，\s\n]+/).map(s => s.trim()).filter(Boolean);
+                gids = input.split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
             } else if (Array.isArray(input)) {
                 gids = input;
             }

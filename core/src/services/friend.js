@@ -263,24 +263,6 @@ async function fetchFriendsByGids(gids) {
     return allFriends;
 }
 
-let autoUpdateFromVisitorsDone = false;
-
-async function tryAutoUpdateCacheFromVisitors() {
-    if (autoUpdateFromVisitorsDone) return false;
-    autoUpdateFromVisitorsDone = true;
-    try {
-        const { extractFriendsFromInteractRecords } = require('./interact');
-        const visitors = await extractFriendsFromInteractRecords();
-        if (Array.isArray(visitors) && visitors.length > 0) {
-            updateFriendCache(undefined, visitors);
-            return true;
-        }
-    } catch {
-        // 静默失败
-    }
-    return false;
-}
-
 async function getAllFriends() {
     let apiFriends = [];
     let apiError = null;

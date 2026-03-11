@@ -676,6 +676,7 @@ function startAdminServer(dataProvider) {
             const strategy = store.getPlantingStrategy(id);
             const preferredSeed = store.getPreferredSeed(id);
             const bagSeedPriority = store.getBagSeedPriority(id);
+            const bagSeedFallbackStrategy = store.getBagSeedFallbackStrategy(id);
             const friendQuietHours = store.getFriendQuietHours(id);
             const knownFriendGids = store.getKnownFriendGids ? store.getKnownFriendGids(id) : [];
             const knownFriendGidSyncCooldownSec = store.getKnownFriendGidSyncCooldownSec

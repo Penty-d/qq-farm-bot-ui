@@ -60,6 +60,20 @@ export interface QrLoginConfig {
   apiDomain: string
 }
 
+export interface RuntimeClientDeviceInfo {
+  sys_software: string
+  network: string
+  memory: string
+  device_id: string
+}
+
+export interface RuntimeClientConfig {
+  serverUrl: string
+  clientVersion: string
+  os: string
+  device_info: RuntimeClientDeviceInfo
+}
+
 export interface BagSeed {
   seedId: number
   name: string
@@ -68,7 +82,6 @@ export interface BagSeed {
   image: string
   plantSize: number
 }
-
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
@@ -79,6 +92,7 @@ export interface SettingsState {
   ui: UIConfig
   offlineReminder: OfflineConfig
   qrLogin: QrLoginConfig
+  runtimeClient: RuntimeClientConfig
 }
 
 export const useSettingStore = defineStore('setting', () => {
@@ -104,6 +118,17 @@ export const useSettingStore = defineStore('setting', () => {
     },
     qrLogin: {
       apiDomain: 'q.qq.com',
+    },
+    runtimeClient: {
+      serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
+      clientVersion: '1.6.2.18_20260227',
+      os: 'iOS',
+      device_info: {
+        sys_software: 'iOS 26.2.1',
+        network: 'wifi',
+        memory: '7672',
+        device_id: 'iPhone X<iPhone18,3>',
+      },
     },
   })
   const loading = ref(false)
@@ -140,6 +165,17 @@ export const useSettingStore = defineStore('setting', () => {
         }
         settings.value.qrLogin = d.qrLogin || {
           apiDomain: 'q.qq.com',
+        }
+        settings.value.runtimeClient = d.runtimeClient || {
+          serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
+          clientVersion: '1.6.2.18_20260227',
+          os: 'iOS',
+          device_info: {
+            sys_software: 'iOS 26.2.1',
+            network: 'wifi',
+            memory: '7672',
+            device_id: 'iPhone X<iPhone18,3>',
+          },
         }
       }
     }
@@ -211,6 +247,22 @@ export const useSettingStore = defineStore('setting', () => {
       loading.value = false
     }
   }
+  async function saveRuntimeClientConfig(config: RuntimeClientConfig) {
+    loading.value = true
+    try {
+      const { data } = await api.post('/api/settings/runtime-client', config)
+      if (data && data.ok) {
+        const saved = (data.data && data.data.runtimeClient) ? data.data.runtimeClient : config
+        settings.value.runtimeClient = saved
+        return { ok: true }
+      }
+      return { ok: false, error: '保存失败' }
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
   async function changeAdminPassword(oldPassword: string, newPassword: string) {
     loading.value = true
     try {
@@ -222,5 +274,5 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, saveQrLoginConfig, changeAdminPassword }
+  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, saveQrLoginConfig, saveRuntimeClientConfig, changeAdminPassword }
 })

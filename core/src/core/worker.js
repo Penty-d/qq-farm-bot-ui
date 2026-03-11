@@ -23,7 +23,7 @@ const { initStatusBar, setStatusPlatform, statusData } = require('../services/st
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
 const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
-const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
+const { connect, reconnect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
 const { validateAutomation, validateIntervals, validateQuietHours } = require('../services/config-validator');
@@ -313,7 +313,54 @@ function stopUnifiedScheduler() {
 
 function applyRuntimeConfig(snapshot, syncNow = false) {
     const prevAuto = getAutomation();
-    
+
+    // runtimeClient（全局连接/设备信息）
+    let runtimeClientChanged = false;
+    const rc = (snapshot && snapshot.runtimeClient && typeof snapshot.runtimeClient === 'object')
+        ? snapshot.runtimeClient
+        : null;
+    if (rc) {
+        const nextServerUrl = rc.serverUrl !== undefined ? String(rc.serverUrl || '').trim() : '';
+        const nextClientVersion = rc.clientVersion !== undefined ? String(rc.clientVersion || '').trim() : '';
+        const nextOs = rc.os !== undefined ? String(rc.os || '').trim() : '';
+        const nextDevice = (rc.device_info && typeof rc.device_info === 'object') ? rc.device_info : null;
+
+        if (nextServerUrl && nextServerUrl !== String(CONFIG.serverUrl || '')) {
+            CONFIG.serverUrl = nextServerUrl;
+            runtimeClientChanged = true;
+        }
+        if (nextClientVersion && nextClientVersion !== String(CONFIG.clientVersion || '')) {
+            CONFIG.clientVersion = nextClientVersion;
+            // device_info.client_version 始终与 clientVersion 同步
+            if (!CONFIG.device_info || typeof CONFIG.device_info !== 'object') {
+                CONFIG.device_info = {};
+            }
+            CONFIG.device_info.client_version = nextClientVersion;
+            runtimeClientChanged = true;
+        }
+        if (nextOs && nextOs !== String(CONFIG.os || '')) {
+            CONFIG.os = nextOs;
+            runtimeClientChanged = true;
+        }
+
+        if (nextDevice) {
+            if (!CONFIG.device_info || typeof CONFIG.device_info !== 'object') {
+                CONFIG.device_info = {};
+            }
+            const fields = ['sys_software', 'network', 'memory', 'device_id'];
+            for (const k of fields) {
+                if (nextDevice[k] === undefined) continue;
+                const v = String(nextDevice[k] || '').trim();
+                if (v !== String(CONFIG.device_info[k] || '')) {
+                    CONFIG.device_info[k] = v;
+                    runtimeClientChanged = true;
+                }
+            }
+            // 始终保持一致
+            CONFIG.device_info.client_version = String(CONFIG.clientVersion || '');
+        }
+    }
+
     // 配置校验
     const validatedSnapshot = snapshot;
     if (snapshot && typeof snapshot === 'object') {
@@ -345,6 +392,20 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
     }
 
     if (loginReady) {
+        // runtimeClient 变更：保存后自动重连生效
+        if (runtimeClientChanged) {
+            const jitter = 300 + Math.floor(Math.random() * 700);
+            workerScheduler.setTimeoutTask('runtime_client_reconnect', jitter, () => {
+                if (!isRunning) return;
+                try {
+                    log('系统', '运行时连接配置已更新，准备重连...');
+                    reconnect(null);
+                } catch (e) {
+                    log('系统', `重连失败: ${e.message}`);
+                }
+            });
+        }
+
         refreshFarmCheckLoop(200);
         refreshFriendCheckLoop(200);
         resetUnifiedSchedule();

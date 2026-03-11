@@ -152,6 +152,21 @@ function createDataProvider(options) {
             return { ui: snapshot.ui || store.getUI() };
         },
 
+        getRuntimeClientConfig: () => {
+            return store.getRuntimeClientConfig ? store.getRuntimeClientConfig() : null;
+        },
+
+        setRuntimeClientConfig: async (payload) => {
+            const body = (payload && typeof payload === 'object') ? payload : {};
+            if (store.setRuntimeClientConfig) {
+                store.setRuntimeClientConfig(body);
+            }
+            const rev = nextConfigRevision();
+            // 全局配置：广播到所有 worker
+            broadcastConfigToWorkers('');
+            return { runtimeClient: store.getRuntimeClientConfig ? store.getRuntimeClientConfig() : null, configRevision: rev };
+        },
+
         broadcastConfig: (accountId) => {
             broadcastConfigToWorkers(accountId);
         },

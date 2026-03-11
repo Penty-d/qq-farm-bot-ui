@@ -126,6 +126,24 @@ async function getInteractRecords() {
         .sort((a, b) => (b.serverTimeSec - a.serverTimeSec) || (b.visitorGid - a.visitorGid) || (b.actionType - a.actionType));
 }
 
+async function extractFriendsFromInteractRecords() {
+    const records = await getInteractRecords();
+    const seen = new Set();
+    const friends = [];
+    for (const record of records) {
+        const gid = Number(record.visitorGid);
+        if (!gid || gid <= 0 || seen.has(gid)) continue;
+        seen.add(gid);
+        friends.push({
+            gid,
+            nick: record.nick || `GID:${gid}`,
+            avatarUrl: record.avatarUrl || '',
+        });
+    }
+    return friends;
+}
+
 module.exports = {
     getInteractRecords,
+    extractFriendsFromInteractRecords,
 };

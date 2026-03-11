@@ -12,7 +12,7 @@ const accountStore = useAccountStore()
 const friendStore = useFriendStore()
 const statusStore = useStatusStore()
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
-const { friends, loading, friendLands, friendLandsLoading, blacklist, interactRecords, interactLoading, interactError } = storeToRefs(friendStore)
+const { friends, loading, friendLands, friendLandsLoading, blacklist, friendCacheUpdating, interactRecords, interactLoading, interactError } = storeToRefs(friendStore)
 const { status, loading: statusLoading, realtimeConnected } = storeToRefs(statusStore)
 
 // Confirm Modal state
@@ -93,10 +93,48 @@ async function loadFriends() {
       avatarErrorKeys.value.clear()
       friendStore.fetchFriends(currentAccountId.value)
       friendStore.fetchBlacklist(currentAccountId.value)
+      friendStore.fetchFriendCache(currentAccountId.value)
       friendStore.fetchInteractRecords(currentAccountId.value)
     }
   }
 }
+
+const cacheUpdateMessage = ref('')
+const cacheUpdateMessageType = ref<'success' | 'error'>('success')
+const showImportGidModal = ref(false)
+const importGidInput = ref('')
+const importGidLoading = ref(false)
+
+async function handleUpdateFriendCache() {
+  if (!currentAccountId.value)
+    return
+  cacheUpdateMessage.value = ''
+  const result = await friendStore.updateFriendCacheFromVisitors(currentAccountId.value)
+  cacheUpdateMessage.value = result.message
+  cacheUpdateMessageType.value = result.ok ? 'success' : 'error'
+  setTimeout(() => {
+    cacheUpdateMessage.value = ''
+  }, 3000)
+}
+
+async function handleImportGids() {
+  if (!currentAccountId.value || !importGidInput.value.trim())
+    return
+  importGidLoading.value = true
+  const result = await friendStore.importGids(currentAccountId.value, importGidInput.value)
+  importGidLoading.value = false
+  cacheUpdateMessage.value = result.message
+  cacheUpdateMessageType.value = result.ok ? 'success' : 'error'
+  if (result.ok) {
+    importGidInput.value = ''
+    showImportGidModal.value = false
+    await friendStore.fetchFriends(currentAccountId.value)
+  }
+  setTimeout(() => {
+    cacheUpdateMessage.value = ''
+  }, 3000)
+}
+
 
 useIntervalFn(() => {
   for (const gid in friendLands.value) {
@@ -356,6 +394,28 @@ function formatInteractTime(timestamp: number) {
           >
             {{ interactLoading ? '刷新中...' : '刷新' }}
           </button>
+          <button
+            class="rounded bg-blue-100 px-3 py-1.5 text-xs text-blue-600 transition disabled:cursor-not-allowed dark:bg-blue-900/30 hover:bg-blue-200 dark:text-blue-300 disabled:opacity-60 dark:hover:bg-blue-900/50"
+            :disabled="friendCacheUpdating"
+            title="从历史访客记录更新好友缓存，仅包含曾访问过你农场的好友"
+            @click.stop="handleUpdateFriendCache"
+          >
+            {{ friendCacheUpdating ? '更新中...' : '同步访客好友缓存' }}
+          </button>
+          <button
+            class="rounded bg-green-100 px-3 py-1.5 text-xs text-green-600 transition dark:bg-green-900/30 hover:bg-green-200 dark:text-green-300 dark:hover:bg-green-900/50"
+            title="手动导入好友 GID"
+            @click.stop="showImportGidModal = true"
+          >
+            导入 GID
+          </button>
+          <span
+            v-if="cacheUpdateMessage"
+            class="text-xs"
+            :class="cacheUpdateMessageType === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+          >
+            {{ cacheUpdateMessage }}
+          </span>
         </div>
       </div>
 
@@ -664,5 +724,42 @@ function formatInteractTime(timestamp: number) {
       @confirm="onConfirm"
       @cancel="!confirmLoading && (showConfirm = false)"
     />
+
+    <!-- 导入 GID 模态框 -->
+    <div
+      v-if="showImportGidModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      @click.self="showImportGidModal = false"
+    >
+      <div class="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
+        <h3 class="mb-4 text-lg font-semibold text-gray-800 dark:text-gray-100">
+          导入好友 GID
+        </h3>
+        <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">
+          输入好友的 GID，多个 GID 用逗号、空格或换行分隔
+        </p>
+        <textarea
+          v-model="importGidInput"
+          class="mb-4 h-32 w-full resize-none border border-gray-200 rounded-lg bg-gray-50 p-3 text-sm outline-none transition dark:border-gray-600 focus:border-blue-400 dark:bg-gray-700 dark:text-gray-100"
+          placeholder="例如: 123456789, 987654321&#10;或每行一个 GID"
+        />
+        <div class="flex justify-end gap-3">
+          <button
+            class="rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-600 transition dark:bg-gray-700 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-600"
+            :disabled="importGidLoading"
+            @click="showImportGidModal = false"
+          >
+            取消
+          </button>
+          <button
+            class="rounded-lg bg-blue-500 px-4 py-2 text-sm text-white transition disabled:cursor-not-allowed hover:bg-blue-600 disabled:opacity-60"
+            :disabled="importGidLoading || !importGidInput.trim()"
+            @click="handleImportGids"
+          >
+            {{ importGidLoading ? '导入中...' : '导入' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

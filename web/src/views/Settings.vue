@@ -27,7 +27,12 @@ const passwordSaving = ref(false)
 const offlineSaving = ref(false)
 const offlineTesting = ref(false)
 const qrSaving = ref(false)
+const friendDataApiSaving = ref(false)
 const runtimeClientSaving = ref(false)
+
+// 密码认证相关状态
+const passwordAuthDisabled = ref(false)
+const passwordAuthLoading = ref(false)
 
 const token = computed(() => {
   return localStorage.getItem('admin_token') || '未登录'
@@ -384,6 +389,11 @@ const localQrLogin = ref({
   apiDomain: 'q.qq.com',
 })
 
+const localFriendDataApi = ref({
+  enabled: false,
+  url: '',
+})
+
 const localRuntimeClient = ref({
   serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
   clientVersion: '1.6.2.18_20260227',
@@ -495,6 +505,9 @@ function syncLocalSettings() {
     if (settings.value.qrLogin) {
       localQrLogin.value = JSON.parse(JSON.stringify(settings.value.qrLogin))
     }
+    if (settings.value.friendDataApi) {
+      localFriendDataApi.value = JSON.parse(JSON.stringify(settings.value.friendDataApi))
+    }
     if (settings.value.runtimeClient) {
       localRuntimeClient.value = JSON.parse(JSON.stringify(settings.value.runtimeClient))
     }
@@ -515,6 +528,7 @@ async function loadData() {
 
 onMounted(() => {
   loadData()
+  fetchPasswordAuthStatus()
 })
 
 watch(currentAccountId, () => {
@@ -830,6 +844,39 @@ async function handleChangePassword() {
   }
 }
 
+// 获取密码认证状态
+async function fetchPasswordAuthStatus() {
+  try {
+    const { data } = await api.get('/api/admin/password-auth-status')
+    if (data && data.ok) {
+      passwordAuthDisabled.value = data.data.disabled
+    }
+  } catch (e) {
+    console.error('获取密码认证状态失败:', e)
+  }
+}
+
+// 切换密码认证状态
+async function handleTogglePasswordAuth() {
+  passwordAuthLoading.value = true
+  try {
+    const { data } = await api.post('/api/admin/toggle-password-auth', {
+      disabled: !passwordAuthDisabled.value,
+    })
+
+    if (data && data.ok) {
+      passwordAuthDisabled.value = data.data.disabled
+      showAlert(passwordAuthDisabled.value ? '已禁用密码认证' : '已启用密码认证')
+    } else {
+      showAlert(`操作失败: ${data?.error || '未知错误'}`, 'danger')
+    }
+  } catch (e: any) {
+    showAlert(`操作失败: ${e?.response?.data?.error || e?.message || '未知错误'}`, 'danger')
+  } finally {
+    passwordAuthLoading.value = false
+  }
+}
+
 async function handleSaveQrLogin() {
   qrSaving.value = true
   try {
@@ -845,6 +892,23 @@ async function handleSaveQrLogin() {
     qrSaving.value = false
   }
 }
+
+async function handleSaveFriendDataApi() {
+  friendDataApiSaving.value = true
+  try {
+    const res = await settingStore.saveFriendDataApiConfig(localFriendDataApi.value)
+    if (res.ok) {
+      showAlert('好友数据接口设置已保存')
+    }
+    else {
+      showAlert(`保存失败: ${res.error || '未知错误'}`, 'danger')
+    }
+  }
+  finally {
+    friendDataApiSaving.value = false
+  }
+}
+
 async function handleSaveRuntimeClient() {
   runtimeClientSaving.value = true
   try {
@@ -1363,6 +1427,32 @@ async function handleTestOffline() {
               修改管理密码
             </BaseButton>
           </div>
+
+          <!-- 取消密码访问功能 -->
+          <div class="mt-4 border-t pt-4 dark:border-gray-700">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  取消密码访问
+                </h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  开启后无需输入管理员密码即可直接进入界面
+                </p>
+              </div>
+              <BaseSwitch
+                :model-value="passwordAuthDisabled"
+                :disabled="passwordAuthLoading"
+                @update:model-value="handleTogglePasswordAuth"
+              />
+            </div>
+            
+            <div v-if="passwordAuthDisabled" class="mt-2 rounded bg-orange-50 p-2 text-xs text-orange-700 dark:bg-orange-900/20 dark:text-orange-300">
+              <div class="flex items-center gap-1">
+                <div class="i-carbon-warning-alt" />
+                <span>安全提醒：已禁用密码认证，任何人都可以访问管理面板</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- QR Login Header -->
@@ -1472,6 +1562,55 @@ async function handleTestOffline() {
             </BaseButton>
           </div>
         </div>
+
+        <!-- Friend Data API Header -->
+        <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+          <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
+            <div class="i-carbon-user-multiple" />
+            好友数据接口
+          </h3>
+        </div>
+
+        <!-- Friend Data API Content -->
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                启用外部好友数据
+              </h4>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                从外部接口获取好友 openid 列表
+              </p>
+            </div>
+            <BaseSwitch v-model="localFriendDataApi.enabled" />
+          </div>
+
+          <BaseInput
+            v-model="localFriendDataApi.url"
+            label="接口地址"
+            type="text"
+            placeholder="https://example.com/api/friends"
+            :disabled="!localFriendDataApi.enabled"
+          />
+
+          <div class="rounded bg-blue-50 p-3 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+            <p class="font-medium mb-1">接口返回格式要求：</p>
+            <pre class="whitespace-pre-wrap text-xs opacity-90">{"data": [{ "openid": "xxx", ... },{ "openid": "yyy", ... }]}</pre>
+            <p class="mt-2">系统会从返回的 JSON 中提取 openid 字段，用于同步好友列表。</p>
+          </div>
+
+          <div class="flex justify-end">
+            <BaseButton
+              variant="primary"
+              size="sm"
+              :loading="friendDataApiSaving"
+              @click="handleSaveFriendDataApi"
+            >
+              保存好友数据接口设置
+            </BaseButton>
+          </div>
+        </div>
+
         <!-- Offline Header -->
         <div class="border-b bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">

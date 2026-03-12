@@ -5,7 +5,7 @@
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantName, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
 const { parentPort } = require('node:worker_threads');
-const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getAutomation, getFriendCache, updateFriendCache } = require('../models/store');
+const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getAutomation, getFriendCache, updateFriendCache, getFriendDataApiConfig } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -190,13 +190,81 @@ function markIdleFriendProbeCooldown(friendGid, hadAction, nowMs = Date.now()) {
 
 // ============ 好友 API ============
 
+async function fetchFriendOpenIdsFromExternalApi() {
+    const cfg = getFriendDataApiConfig();
+    if (!cfg.enabled || !cfg.url) {
+        return [];
+    }
+    try {
+        const https = require('node:https');
+        const http = require('node:http');
+        const client = cfg.url.startsWith('https') ? https : http;
+        
+        return new Promise((resolve) => {
+            const req = client.get(cfg.url, {
+                timeout: 10000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0',
+                    'Accept': 'application/json',
+                },
+            }, (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        const dataArray = json.data || json;
+                        if (!Array.isArray(dataArray)) {
+                            logWarn('好友', '外部好友数据接口返回格式错误: data 不是数组');
+                            resolve([]);
+                            return;
+                        }
+                        const openIds = [];
+                        for (const item of dataArray) {
+                            const openid = String(item.openid || item.open_id || '').trim();
+                            if (openid) {
+                                openIds.push(openid);
+                            }
+                        }
+                        log('好友', `从外部接口获取到 ${openIds.length} 个好友 openid`);
+                        resolve(openIds);
+                    } catch (e) {
+                        logWarn('好友', `解析外部好友数据失败: ${e.message}`);
+                        resolve([]);
+                    }
+                });
+            });
+            req.on('error', (e) => {
+                logWarn('好友', `请求外部好友数据接口失败: ${e.message}`);
+                resolve([]);
+            });
+            req.on('timeout', () => {
+                req.destroy();
+                logWarn('好友', '请求外部好友数据接口超时');
+                resolve([]);
+            });
+        });
+    } catch (e) {
+        logWarn('好友', `获取外部好友数据异常: ${e.message}`);
+        return [];
+    }
+}
+
 async function fetchFriendsFromApi() {
     const isQQ = CONFIG.platform === 'qq';
     if (isQQ) {
         const syncReq = types.SyncAllRequest || types.SyncAllFriendsRequest;
         const syncRep = types.SyncAllReply || types.SyncAllFriendsReply;
         if (!syncReq || !syncRep) throw new Error('SyncAll 接口类型未加载');
-        const body = syncReq.encode(syncReq.create({ open_ids: [] })).finish();
+        
+        let openIds = [];
+        try {
+            openIds = await fetchFriendOpenIdsFromExternalApi();
+        } catch (e) {
+            logWarn('好友', `获取外部好友 openid 失败: ${e.message}`);
+        }
+        
+        const body = syncReq.encode(syncReq.create({ open_ids: openIds })).finish();
         const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'SyncAll', body);
         return syncRep.decode(replyBody);
     }

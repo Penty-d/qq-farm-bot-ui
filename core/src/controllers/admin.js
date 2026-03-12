@@ -71,6 +71,11 @@ function startAdminServer(dataProvider) {
 
     const issueToken = () => crypto.randomBytes(24).toString('hex');
     const authRequired = (req, res, next) => {
+        // 检查是否禁用了密码认证
+        if (store.getDisablePasswordAuth && store.getDisablePasswordAuth()) {
+            return next();
+        }
+        
         const token = req.headers['x-admin-token'];
         if (!token || !tokens.has(token)) {
             return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -138,7 +143,7 @@ function startAdminServer(dataProvider) {
     });
 
     app.use('/api', (req, res, next) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/auth/validate') return next();
+        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/auth/validate' || req.path === '/admin/password-auth-status') return next();
         return authRequired(req, res, next);
     });
 
@@ -163,17 +168,47 @@ function startAdminServer(dataProvider) {
         res.json({ ok: true });
     });
 
+    // API: 获取密码认证状态
+    app.get('/api/admin/password-auth-status', (req, res) => {
+        try {
+            const disabled = store.getDisablePasswordAuth ? store.getDisablePasswordAuth() : false;
+            res.json({ ok: true, data: { disabled } });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 设置密码认证状态
+    app.post('/api/admin/toggle-password-auth', async (req, res) => {
+        try {
+            const body = req.body || {};
+            const disabled = Boolean(body.disabled);
+            
+            if (store.setDisablePasswordAuth) {
+                store.setDisablePasswordAuth(disabled);
+            }
+            res.json({ ok: true, data: { disabled } });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     app.get('/api/ping', (req, res) => {
         res.json({ ok: true, data: { ok: true, uptime: process.uptime(), version } });
     });
 
     app.get('/api/auth/validate', (req, res) => {
+        // 如果禁用了密码认证，直接返回有效
+        if (store.getDisablePasswordAuth && store.getDisablePasswordAuth()) {
+            return res.json({ ok: true, data: { valid: true, passwordDisabled: true } });
+        }
+        
         const token = String(req.headers['x-admin-token'] || '').trim();
         const valid = !!token && tokens.has(token);
         if (!valid) {
             return res.status(401).json({ ok: false, data: { valid: false }, error: 'Unauthorized' });
         }
-        res.json({ ok: true, data: { valid: true } });
+        res.json({ ok: true, data: { valid: true, passwordDisabled: false } });
     });
 
     // API: 调度任务快照（用于调度收敛排查）
@@ -605,6 +640,18 @@ function startAdminServer(dataProvider) {
             res.status(500).json({ ok: false, error: e.message });
         }
     });
+
+    // API: 保存好友数据接口配置
+    app.post('/api/settings/friend-data-api', async (req, res) => {
+        try {
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            const data = store.setFriendDataApiConfig ? store.setFriendDataApiConfig(body) : { enabled: false, url: '' };
+            res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
     // API: 保存运行时连接/设备配置
     app.post('/api/settings/runtime-client', async (req, res) => {
         try {
@@ -684,10 +731,13 @@ function startAdminServer(dataProvider) {
             const qrLogin = store.getQrLoginConfig
                 ? store.getQrLoginConfig()
                 : { apiDomain: 'q.qq.com' };
+            const friendDataApi = store.getFriendDataApiConfig
+                ? store.getFriendDataApiConfig()
+                : { enabled: false, url: '' };
             const runtimeClient = store.getRuntimeClientConfig
                 ? store.getRuntimeClientConfig()
                 : null;
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, friendQuietHours, automation, ui, offlineReminder, qrLogin, runtimeClient } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, bagSeedPriority, friendQuietHours, automation, ui, offlineReminder, qrLogin, friendDataApi, runtimeClient } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

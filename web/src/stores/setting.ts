@@ -59,6 +59,11 @@ export interface QrLoginConfig {
   apiDomain: string
 }
 
+export interface FriendDataApiConfig {
+  enabled: boolean
+  url: string
+}
+
 export interface RuntimeClientDeviceInfo {
   sys_software: string
   network: string
@@ -91,6 +96,7 @@ export interface SettingsState {
   ui: UIConfig
   offlineReminder: OfflineConfig
   qrLogin: QrLoginConfig
+  friendDataApi: FriendDataApiConfig
   runtimeClient: RuntimeClientConfig
 }
 
@@ -117,6 +123,10 @@ export const useSettingStore = defineStore('setting', () => {
     },
     qrLogin: {
       apiDomain: 'q.qq.com',
+    },
+    friendDataApi: {
+      enabled: false,
+      url: '',
     },
     runtimeClient: {
       serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
@@ -164,6 +174,10 @@ export const useSettingStore = defineStore('setting', () => {
         }
         settings.value.qrLogin = d.qrLogin || {
           apiDomain: 'q.qq.com',
+        }
+        settings.value.friendDataApi = d.friendDataApi || {
+          enabled: false,
+          url: '',
         }
         settings.value.runtimeClient = d.runtimeClient || {
           serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
@@ -246,6 +260,22 @@ export const useSettingStore = defineStore('setting', () => {
       loading.value = false
     }
   }
+
+  async function saveFriendDataApiConfig(config: FriendDataApiConfig) {
+    loading.value = true
+    try {
+      const { data } = await api.post('/api/settings/friend-data-api', config)
+      if (data && data.ok) {
+        settings.value.friendDataApi = data.data || config
+        return { ok: true }
+      }
+      return { ok: false, error: '保存失败' }
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
   async function saveRuntimeClientConfig(config: RuntimeClientConfig) {
     loading.value = true
     try {
@@ -273,5 +303,5 @@ export const useSettingStore = defineStore('setting', () => {
     }
   }
 
-  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, saveQrLoginConfig, saveRuntimeClientConfig, changeAdminPassword }
+  return { settings, loading, fetchSettings, saveSettings, saveOfflineConfig, saveQrLoginConfig, saveFriendDataApiConfig, saveRuntimeClientConfig, changeAdminPassword }
 })

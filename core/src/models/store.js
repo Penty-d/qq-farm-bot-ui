@@ -39,6 +39,11 @@ const DEFAULT_QR_LOGIN = {
     apiDomain: 'q.qq.com',
 };
 
+const DEFAULT_FRIEND_DATA_API = {
+    enabled: false,
+    url: '',
+};
+
 const DEFAULT_RUNTIME_CLIENT = {
     serverUrl: BASE_CONFIG.serverUrl,
     clientVersion: BASE_CONFIG.clientVersion,
@@ -120,8 +125,10 @@ const globalConfig = {
     },
     offlineReminder: { ...DEFAULT_OFFLINE_REMINDER },
     qrLogin: { ...DEFAULT_QR_LOGIN },
+    friendDataApi: { ...DEFAULT_FRIEND_DATA_API },
     runtimeClient: { ...DEFAULT_RUNTIME_CLIENT, device_info: { ...DEFAULT_RUNTIME_CLIENT.device_info } },
     adminPasswordHash: '',
+    disablePasswordAuth: false,
 };
 
 function normalizeOfflineReminder(input) {
@@ -200,6 +207,26 @@ function normalizeQrLoginConfig(input) {
     const src = (input && typeof input === 'object') ? input : {};
     return {
         apiDomain: normalizeApiDomain(src.apiDomain, DEFAULT_QR_LOGIN.apiDomain),
+    };
+}
+
+function normalizeFriendDataApiConfig(input) {
+    const src = (input && typeof input === 'object') ? input : {};
+    const rawUrl = String(src.url || '').trim();
+    let url = '';
+    if (rawUrl) {
+        try {
+            const parsed = new URL(rawUrl);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                url = rawUrl;
+            }
+        } catch {
+            url = '';
+        }
+    }
+    return {
+        enabled: !!src.enabled,
+        url,
     };
 }
 
@@ -556,6 +583,7 @@ function loadGlobalConfig() {
             globalConfig.ui.theme = theme === 'light' ? 'light' : 'dark';
             globalConfig.offlineReminder = normalizeOfflineReminder(data.offlineReminder);
             globalConfig.qrLogin = normalizeQrLoginConfig(data.qrLogin);
+            globalConfig.friendDataApi = normalizeFriendDataApiConfig(data.friendDataApi);
             if (data.runtimeClient && typeof data.runtimeClient === 'object') {
                 // normalize 时使用当前 default 作为 fallback
                 normalizeRuntimeClientConfig.current = DEFAULT_RUNTIME_CLIENT;
@@ -570,6 +598,9 @@ function loadGlobalConfig() {
             }
             if (typeof data.adminPasswordHash === 'string') {
                 globalConfig.adminPasswordHash = data.adminPasswordHash;
+            }
+            if (typeof data.disablePasswordAuth === 'boolean') {
+                globalConfig.disablePasswordAuth = data.disablePasswordAuth;
             }
         }
     } catch (e) {
@@ -628,6 +659,16 @@ function setAdminPasswordHash(hash) {
     globalConfig.adminPasswordHash = String(hash || '');
     saveGlobalConfig();
     return globalConfig.adminPasswordHash;
+}
+
+function getDisablePasswordAuth() {
+    return Boolean(globalConfig.disablePasswordAuth);
+}
+
+function setDisablePasswordAuth(disabled) {
+    globalConfig.disablePasswordAuth = Boolean(disabled);
+    saveGlobalConfig();
+    return globalConfig.disablePasswordAuth;
 }
 
 // 初始化加载
@@ -864,6 +905,17 @@ function setQrLoginConfig(cfg) {
     saveGlobalConfig();
     return getQrLoginConfig();
 }
+
+function getFriendDataApiConfig() {
+    return normalizeFriendDataApiConfig(globalConfig.friendDataApi);
+}
+
+function setFriendDataApiConfig(cfg) {
+    const current = normalizeFriendDataApiConfig(globalConfig.friendDataApi);
+    globalConfig.friendDataApi = normalizeFriendDataApiConfig({ ...current, ...(cfg || {}) });
+    saveGlobalConfig();
+    return getFriendDataApiConfig();
+}
 // ============ 账号管理 ============
 function loadAccounts() {
     ensureDataDir();
@@ -956,6 +1008,8 @@ module.exports = {
     setOfflineReminder,
     getQrLoginConfig,
     setQrLoginConfig,
+    getFriendDataApiConfig,
+    setFriendDataApiConfig,
     getRuntimeClientConfig,
     setRuntimeClientConfig,
     getAccounts,
@@ -963,4 +1017,6 @@ module.exports = {
     deleteAccount,
     getAdminPasswordHash,
     setAdminPasswordHash,
+    getDisablePasswordAuth,
+    setDisablePasswordAuth,
 };

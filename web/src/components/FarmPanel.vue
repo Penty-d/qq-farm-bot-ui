@@ -77,9 +77,10 @@ const displayLands = computed(() => {
   const rows = Math.ceil(list.length / columns)
   const ordered: any[] = []
 
-  // Convert source data into the same top-to-bottom, left-to-right order the CSS grid uses.
+  // Farm land ids are numbered from the top-right corner downward in each column.
+  // Reorder the cards so the rendered grid matches the in-game layout.
   for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < columns; col++) {
+    for (let col = columns - 1; col >= 0; col--) {
       const index = col * rows + row
       if (index < list.length)
         ordered.push(list[index])

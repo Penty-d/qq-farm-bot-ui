@@ -101,6 +101,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
         end: '07:00',
     },
     friendBlacklist: [],
+    friendCache: [],
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
 
@@ -125,6 +126,7 @@ const globalConfig = {
     qrLogin: { ...DEFAULT_QR_LOGIN },
     runtimeClient: { ...DEFAULT_RUNTIME_CLIENT, device_info: { ...DEFAULT_RUNTIME_CLIENT.device_info } },
     adminPasswordHash: '',
+    disablePasswordAuth: false,
 };
 
 function normalizeOfflineReminder(input) {
@@ -352,6 +354,41 @@ function normalizeFertilizerBuyAutomation(automation) {
         next.fertilizer_buy_type = 'organic';
     }
     return next;
+function normalizeFriendCache(input) {
+    if (!Array.isArray(input)) return [];
+    const seen = new Set();
+    const normalized = [];
+    for (const item of input) {
+        if (!item || typeof item !== 'object') continue;
+        const gid = Number(item.gid);
+        if (!Number.isFinite(gid) || gid <= 0) continue;
+        if (seen.has(gid)) continue;
+        seen.add(gid);
+        normalized.push({
+            gid,
+            nick: String(item.nick || '').trim() || `GID:${gid}`,
+            avatarUrl: String(item.avatarUrl || '').trim(),
+        });
+    }
+    return normalized;
+}
+
+function mergeFriendCache(existing, newItems) {
+    const merged = normalizeFriendCache(existing);
+    const seen = new Set(merged.map(f => f.gid));
+    const toAdd = normalizeFriendCache(newItems);
+    for (const item of toAdd) {
+        if (seen.has(item.gid)) {
+            const idx = merged.findIndex(f => f.gid === item.gid);
+            if (idx >= 0) {
+                merged[idx] = { ...merged[idx], ...item };
+            }
+        } else {
+            seen.add(item.gid);
+            merged.push(item);
+        }
+    }
+    return merged;
 }
 
 function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
@@ -373,12 +410,14 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     normalizeFertilizerBuyAutomation(automation);
 
     const rawBlacklist = Array.isArray(base.friendBlacklist) ? base.friendBlacklist : [];
+    const rawFriendCache = Array.isArray(base.friendCache) ? base.friendCache : [];
     return {
         ...base,
         automation,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
+        friendCache: normalizeFriendCache(rawFriendCache),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
@@ -458,6 +497,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (Array.isArray(src.friendBlacklist)) {
         cfg.friendBlacklist = src.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    }
+
+    if (Array.isArray(src.friendCache)) {
+        cfg.friendCache = normalizeFriendCache(src.friendCache);
     }
 
     return cfg;
@@ -553,6 +596,9 @@ function loadGlobalConfig() {
             if (typeof data.adminPasswordHash === 'string') {
                 globalConfig.adminPasswordHash = data.adminPasswordHash;
             }
+            if (typeof data.disablePasswordAuth === 'boolean') {
+                globalConfig.disablePasswordAuth = data.disablePasswordAuth;
+            }
         }
     } catch (e) {
         console.error('加载配置失败:', e.message);
@@ -610,6 +656,16 @@ function setAdminPasswordHash(hash) {
     globalConfig.adminPasswordHash = String(hash || '');
     saveGlobalConfig();
     return globalConfig.adminPasswordHash;
+}
+
+function getDisablePasswordAuth() {
+    return Boolean(globalConfig.disablePasswordAuth);
+}
+
+function setDisablePasswordAuth(disabled) {
+    globalConfig.disablePasswordAuth = Boolean(disabled);
+    saveGlobalConfig();
+    return globalConfig.disablePasswordAuth;
 }
 
 // 初始化加载
@@ -703,6 +759,10 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     if (Array.isArray(cfg.friendBlacklist)) {
         next.friendBlacklist = cfg.friendBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0);
+    }
+
+    if (Array.isArray(cfg.friendCache)) {
+        next.friendCache = normalizeFriendCache(cfg.friendCache);
     }
 
     if (cfg.ui && typeof cfg.ui === 'object') {
@@ -799,6 +859,26 @@ function setFriendBlacklist(accountId, list) {
     next.friendBlacklist = Array.isArray(list) ? list.map(Number).filter(n => Number.isFinite(n) && n > 0) : [];
     setAccountConfigSnapshot(accountId, next);
     return [...next.friendBlacklist];
+}
+
+function getFriendCache(accountId) {
+    return normalizeFriendCache(getAccountConfigSnapshot(accountId).friendCache);
+}
+
+function setFriendCache(accountId, list) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.friendCache = normalizeFriendCache(list);
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.friendCache];
+}
+
+function updateFriendCache(accountId, newItems) {
+    const current = getAccountConfigSnapshot(accountId);
+    const next = normalizeAccountConfig(current, accountFallbackConfig);
+    next.friendCache = mergeFriendCache(next.friendCache, newItems);
+    setAccountConfigSnapshot(accountId, next);
+    return [...next.friendCache];
 }
 
 function getUI() {
@@ -916,6 +996,9 @@ module.exports = {
     getFriendQuietHours,
     getFriendBlacklist,
     setFriendBlacklist,
+    getFriendCache,
+    setFriendCache,
+    updateFriendCache,
     getUI,
     setUITheme,
     getOfflineReminder,
@@ -929,4 +1012,6 @@ module.exports = {
     deleteAccount,
     getAdminPasswordHash,
     setAdminPasswordHash,
+    getDisablePasswordAuth,
+    setDisablePasswordAuth,
 };

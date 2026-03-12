@@ -110,6 +110,8 @@ const typeMappings = [
     ['SyncAllReply', 'gamepb.friendpb.SyncAllReply'],
     ['SyncAllFriendsRequest', 'gamepb.friendpb.SyncAllRequest'],
     ['SyncAllFriendsReply', 'gamepb.friendpb.SyncAllReply'],
+    ['GetGameFriendsRequest', 'gamepb.friendpb.GetGameFriendsRequest'],
+    ['GetGameFriendsReply', 'gamepb.friendpb.GetGameFriendsReply'],
     ['GetApplicationsRequest', 'gamepb.friendpb.GetApplicationsRequest'],
     ['GetApplicationsReply', 'gamepb.friendpb.GetApplicationsReply'],
     ['AcceptFriendsRequest', 'gamepb.friendpb.AcceptFriendsRequest'],

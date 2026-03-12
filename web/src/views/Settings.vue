@@ -29,6 +29,10 @@ const offlineTesting = ref(false)
 const qrSaving = ref(false)
 const runtimeClientSaving = ref(false)
 
+// 密码认证相关状态
+const passwordAuthDisabled = ref(false)
+const passwordAuthLoading = ref(false)
+
 const token = computed(() => {
   return localStorage.getItem('admin_token') || '未登录'
 })
@@ -548,6 +552,7 @@ async function loadData() {
 
 onMounted(() => {
   loadData()
+  fetchPasswordAuthStatus()
 })
 
 watch(currentAccountId, () => {
@@ -868,6 +873,39 @@ async function handleChangePassword() {
   }
   finally {
     passwordSaving.value = false
+  }
+}
+
+// 获取密码认证状态
+async function fetchPasswordAuthStatus() {
+  try {
+    const { data } = await api.get('/api/admin/password-auth-status')
+    if (data && data.ok) {
+      passwordAuthDisabled.value = data.data.disabled
+    }
+  } catch (e) {
+    console.error('获取密码认证状态失败:', e)
+  }
+}
+
+// 切换密码认证状态
+async function handleTogglePasswordAuth() {
+  passwordAuthLoading.value = true
+  try {
+    const { data } = await api.post('/api/admin/toggle-password-auth', {
+      disabled: !passwordAuthDisabled.value,
+    })
+
+    if (data && data.ok) {
+      passwordAuthDisabled.value = data.data.disabled
+      showAlert(passwordAuthDisabled.value ? '已禁用密码认证' : '已启用密码认证')
+    } else {
+      showAlert(`操作失败: ${data?.error || '未知错误'}`, 'danger')
+    }
+  } catch (e: any) {
+    showAlert(`操作失败: ${e?.response?.data?.error || e?.message || '未知错误'}`, 'danger')
+  } finally {
+    passwordAuthLoading.value = false
   }
 }
 
@@ -1443,6 +1481,32 @@ async function handleTestOffline() {
             >
               修改管理密码
             </BaseButton>
+          </div>
+
+          <!-- 取消密码访问功能 -->
+          <div class="mt-4 border-t pt-4 dark:border-gray-700">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h4 class="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  取消密码访问
+                </h4>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  开启后无需输入管理员密码即可直接进入界面
+                </p>
+              </div>
+              <BaseSwitch
+                :model-value="passwordAuthDisabled"
+                :disabled="passwordAuthLoading"
+                @update:model-value="handleTogglePasswordAuth"
+              />
+            </div>
+            
+            <div v-if="passwordAuthDisabled" class="mt-2 rounded bg-orange-50 p-2 text-xs text-orange-700 dark:bg-orange-900/20 dark:text-orange-300">
+              <div class="flex items-center gap-1">
+                <div class="i-carbon-warning-alt" />
+                <span>安全提醒：已禁用密码认证，任何人都可以访问管理面板</span>
+              </div>
+            </div>
           </div>
         </div>
 

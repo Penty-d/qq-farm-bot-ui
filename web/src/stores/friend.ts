@@ -8,6 +8,9 @@ export const useFriendStore = defineStore('friend', () => {
   const friendLands = ref<Record<string, any[]>>({})
   const friendLandsLoading = ref<Record<string, boolean>>({})
   const blacklist = ref<number[]>([])
+  const friendCache = ref<any[]>([])
+  const friendCacheLoading = ref(false)
+  const friendCacheUpdating = ref(false)
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
   const interactError = ref('')
@@ -160,18 +163,107 @@ export const useFriendStore = defineStore('friend', () => {
     await fetchFriendLands(accountId, targetFriendId)
   }
 
+  async function fetchFriendCache(accountId: string) {
+    if (!accountId)
+      return
+    friendCacheLoading.value = true
+    try {
+      const res = await api.get('/api/friend-cache', {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        friendCache.value = res.data.data || []
+      }
+    }
+    catch { /* ignore */ }
+    finally {
+      friendCacheLoading.value = false
+    }
+  }
+
+  async function updateFriendCacheFromVisitors(accountId: string) {
+    if (!accountId)
+      return { ok: false, message: '缺少账号ID' }
+    friendCacheUpdating.value = true
+    try {
+      const res = await api.post('/api/friend-cache/update-from-visitors', {}, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        friendCache.value = res.data.data || []
+        return { ok: true, message: res.data.message || '更新成功' }
+      }
+      return { ok: false, message: res.data.error || '更新失败' }
+    }
+    catch (error: any) {
+      return { ok: false, message: error?.response?.data?.error || error?.message || '更新失败' }
+    }
+    finally {
+      friendCacheUpdating.value = false
+    }
+  }
+
+  async function importGids(accountId: string, gids: string) {
+    if (!accountId)
+      return { ok: false, message: '缺少账号ID' }
+    if (!gids.trim())
+      return { ok: false, message: '请输入 GID' }
+    friendCacheUpdating.value = true
+    try {
+      const res = await api.post('/api/friend-cache/import-gids', { gids }, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        friendCache.value = res.data.data || []
+        return { ok: true, message: res.data.message || '导入成功' }
+      }
+      return { ok: false, message: res.data.error || '导入失败' }
+    }
+    catch (error: any) {
+      return { ok: false, message: error?.response?.data?.error || error?.message || '导入失败' }
+    }
+    finally {
+      friendCacheUpdating.value = false
+    }
+  }
+
+  async function removeCachedFriend(accountId: string, gid: number) {
+    if (!accountId || !gid)
+      return { ok: false, message: '参数错误' }
+    try {
+      const res = await api.delete(`/api/friend-cache/${gid}`, {
+        headers: { 'x-account-id': accountId },
+      })
+      if (res.data.ok) {
+        friendCache.value = res.data.data || []
+        return { ok: true, message: res.data.message || '删除成功' }
+      }
+      return { ok: false, message: res.data.error || '删除失败' }
+    }
+    catch (error: any) {
+      return { ok: false, message: error?.response?.data?.error || error?.message || '删除失败' }
+    }
+  }
+
   return {
     friends,
     loading,
     friendLands,
     friendLandsLoading,
     blacklist,
+    friendCache,
+    friendCacheLoading,
+    friendCacheUpdating,
     interactRecords,
     interactLoading,
     interactError,
     fetchFriends,
     fetchBlacklist,
     toggleBlacklist,
+    fetchFriendCache,
+    updateFriendCacheFromVisitors,
+    importGids,
+    removeCachedFriend,
     fetchInteractRecords,
     fetchFriendLands,
     operate,

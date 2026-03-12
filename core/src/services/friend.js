@@ -5,7 +5,7 @@
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantName, getPlantById, getSeedImageBySeedId } = require('../config/gameConfig');
 const { parentPort } = require('node:worker_threads');
-const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getAutomation } = require('../models/store');
+const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, getAutomation, getFriendCache, updateFriendCache } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../utils/utils');
@@ -190,7 +190,7 @@ function markIdleFriendProbeCooldown(friendGid, hadAction, nowMs = Date.now()) {
 
 // ============ 好友 API ============
 
-async function getAllFriends() {
+async function fetchFriendsFromApi() {
     const isQQ = CONFIG.platform === 'qq';
     if (isQQ) {
         const syncReq = types.SyncAllRequest || types.SyncAllFriendsRequest;
@@ -204,6 +204,119 @@ async function getAllFriends() {
     const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body);
     return types.GetAllFriendsReply.decode(replyBody);
+}
+
+function saveFriendsToCache(friends) {
+    if (!Array.isArray(friends) || friends.length === 0) return;
+    const cacheItems = friends.map(f => ({
+        gid: toNum(f.gid),
+        nick: String(f.remark || f.name || '').trim() || `GID:${toNum(f.gid)}`,
+        avatarUrl: String(f.avatar_url || '').trim(),
+    })).filter(f => f.gid > 0);
+    if (cacheItems.length > 0) {
+        updateFriendCache(undefined, cacheItems);
+    }
+}
+
+function buildFriendsFromCache() {
+    const cache = getFriendCache();
+    if (!Array.isArray(cache) || cache.length === 0) return { game_friends: [] };
+    const gameFriends = cache.map(f => ({
+        gid: toLong(f.gid),
+        name: f.nick || `GID:${f.gid}`,
+        remark: f.nick || '',
+        avatar_url: f.avatarUrl || '',
+        plant: null,
+    }));
+    return { game_friends: gameFriends };
+}
+
+const GET_GAME_FRIENDS_BATCH_SIZE = 35;
+
+async function fetchFriendsByGids(gids) {
+    if (!types.GetGameFriendsRequest) {
+        return [];
+    }
+    const validGids = (Array.isArray(gids) ? gids : []).map(g => toNum(g)).filter(g => g > 0);
+    if (validGids.length === 0) return [];
+
+    const allFriends = [];
+    for (let i = 0; i < validGids.length; i += GET_GAME_FRIENDS_BATCH_SIZE) {
+        const batch = validGids.slice(i, i + GET_GAME_FRIENDS_BATCH_SIZE);
+        try {
+            const body = types.GetGameFriendsRequest.encode(types.GetGameFriendsRequest.create({
+                gids: batch.map(g => toLong(g)),
+            })).finish();
+            const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetGameFriends', body);
+            if (replyBody && replyBody.length > 0) {
+                const reply = types.GetAllFriendsReply.decode(replyBody);
+                const friends = reply.game_friends || [];
+                allFriends.push(...friends);
+            }
+        } catch {
+            // 单批失败不影响其他批次
+        }
+        if (i + GET_GAME_FRIENDS_BATCH_SIZE < validGids.length) {
+            await sleep(100);
+        }
+    }
+    return allFriends;
+}
+
+async function getAllFriends() {
+    let apiFriends = [];
+    let apiError = null;
+    
+    try {
+        const reply = await fetchFriendsFromApi();
+        apiFriends = reply.game_friends || [];
+        if (apiFriends.length > 0) {
+            saveFriendsToCache(apiFriends);
+        }
+    } catch (err) {
+        apiError = err;
+    }
+    
+    const cache = getFriendCache();
+    const cacheCount = Array.isArray(cache) ? cache.length : 0;
+    
+    if (apiFriends.length > 0 && apiFriends.length >= cacheCount) {
+        return { game_friends: apiFriends };
+    }
+    
+    if (cacheCount > 0 && cacheCount > apiFriends.length) {
+        const apiGids = new Set(apiFriends.map(f => toNum(f.gid)));
+        const missingGids = cache.map(f => f.gid).filter(g => g > 0 && !apiGids.has(g));
+        
+        if (missingGids.length > 0) {
+            const extraFriends = await fetchFriendsByGids(missingGids);
+            if (extraFriends.length > 0) {
+                const combined = [...apiFriends, ...extraFriends];
+                saveFriendsToCache(extraFriends);
+                return { game_friends: combined };
+            }
+        }
+        
+        if (apiFriends.length === 0) {
+            const allGids = cache.map(f => f.gid).filter(g => g > 0);
+            const friendsFromGids = await fetchFriendsByGids(allGids);
+            if (friendsFromGids.length > 0) {
+                saveFriendsToCache(friendsFromGids);
+                return { game_friends: friendsFromGids };
+            }
+            return buildFriendsFromCache();
+        }
+    }
+    
+    if (apiFriends.length > 0) {
+        return { game_friends: apiFriends };
+    }
+    
+    if (apiError) {
+        throw apiError;
+    }
+    
+    return { game_friends: [] };
 }
 
 // ============ 好友申请 API (微信同玩) ============

@@ -98,6 +98,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
     },
     friendBlacklist: [],
     friendCache: [],
+    offlineReminder: null, // null means use global config
 };
 const ALLOWED_AUTOMATION_KEYS = new Set(Object.keys(DEFAULT_ACCOUNT_CONFIG.automation));
 
@@ -409,6 +410,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
         bagSeedPriority: normalizeBagSeedPriority(base.bagSeedPriority),
+        offlineReminder: base.offlineReminder !== undefined ? base.offlineReminder : null,
     };
 }
 
@@ -476,6 +478,15 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (Array.isArray(src.friendCache)) {
         cfg.friendCache = normalizeFriendCache(src.friendCache);
+    }
+
+    // Handle account-level offline reminder config
+    if (src.offlineReminder !== undefined) {
+        if (src.offlineReminder === null) {
+            cfg.offlineReminder = null; // Use global config
+        } else if (src.offlineReminder && typeof src.offlineReminder === 'object') {
+            cfg.offlineReminder = normalizeOfflineReminder(src.offlineReminder);
+        }
     }
 
     return cfg;
@@ -933,6 +944,22 @@ function deleteAccount(id) {
     return data;
 }
 
+function getAccountOfflineReminder(accountId) {
+    const id = resolveAccountId(accountId);
+    const cfg = getAccountConfigSnapshot(id);
+    return cfg && cfg.offlineReminder ? cfg.offlineReminder : null;
+}
+
+function setAccountOfflineReminder(accountId, config) {
+    const id = resolveAccountId(accountId);
+    const cfg = getAccountConfigSnapshot(id);
+    if (!cfg) return null;
+    
+    cfg.offlineReminder = config;
+    setAccountConfigSnapshot(id, cfg, true);
+    return config;
+}
+
 module.exports = {
     getConfigSnapshot,
     applyConfigSnapshot,
@@ -954,6 +981,8 @@ module.exports = {
     setUITheme,
     getOfflineReminder,
     setOfflineReminder,
+    getAccountOfflineReminder,
+    setAccountOfflineReminder,
     getQrLoginConfig,
     setQrLoginConfig,
     getRuntimeClientConfig,

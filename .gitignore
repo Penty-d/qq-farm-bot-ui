@@ -1,3 +1,10 @@
+# Chinese docs (local only)
+功能实现总结.md
+快速开始-账号级离线提醒.md
+更新日志-账号级离线提醒.md
+账号级离线提醒配置-UI版.md
+部署说明.md
+
 # Dependencies
 node_modules/
 **/node_modules/
@@ -32,6 +39,22 @@ yarn-error.log*
 .env.*
 !.env.example
 *.local
+
+# OpenClaw / AI agent config
+.openclaw/
+.opencode/
+AGENTS.md
+SOUL.md
+TOOLS.md
+USER.md
+IDENTITY.md
+MEMORY.md
+HEARTBEAT.md
+BOOTSTRAP.md
+memory/
+autocode.js
+vv-AutoCode.js
+账号配置示例.json
 
 # Editor & OS
 .vscode/

@@ -7,7 +7,6 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 import { useAccountStore } from '@/stores/account'
 import { useFarmStore } from '@/stores/farm'
 import { useSettingStore } from '@/stores/setting'
@@ -380,6 +379,9 @@ const localOffline = ref({
   custom_body: '',
 })
 
+const useGlobalOfflineReminder = ref(true)
+const accountOfflineReminder = ref<any>(null)
+
 const localQrLogin = ref({
   apiDomain: 'q.qq.com',
 })
@@ -483,7 +485,7 @@ function syncLocalSettings() {
     localSettings.value.automation.fertilizer_land_types = normalizeFertilizerLandTypes(localSettings.value.automation.fertilizer_land_types)
     localSettings.value.automation.friend_steal_blacklist = normalizeStealPlantBlacklist(localSettings.value.automation.friend_steal_blacklist)
 
-    // Sync offline settings (global)
+    // Sync offline settings
     if (settings.value.offlineReminder) {
       localOffline.value = {
         ...localOffline.value,
@@ -492,6 +494,7 @@ function syncLocalSettings() {
     }
     localOffline.value.offlineDeleteSec = Math.max(1, Number.parseInt(String(localOffline.value.offlineDeleteSec), 10) || 1)
     localOffline.value.offlineDeleteEnabled = !!localOffline.value.offlineDeleteEnabled
+    
     if (settings.value.qrLogin) {
       localQrLogin.value = JSON.parse(JSON.stringify(settings.value.qrLogin))
     }
@@ -509,7 +512,24 @@ async function loadData() {
     await Promise.all([
       farmStore.fetchSeeds(currentAccountId.value),
       loadStealBlacklistAnalytics(),
+      loadAccountOfflineReminder(),
     ])
+  }
+}
+
+async function loadAccountOfflineReminder() {
+  try {
+    const { data } = await api.get('/api/settings/account-offline-reminder')
+    if (data?.ok) {
+      useGlobalOfflineReminder.value = data.data?.useGlobal !== false
+      accountOfflineReminder.value = data.data?.accountConfig || null
+      if (!useGlobalOfflineReminder.value && accountOfflineReminder.value) {
+        localOffline.value = { ...localOffline.value, ...accountOfflineReminder.value }
+      }
+    }
+  }
+  catch (e) {
+    console.error('Failed to load account offline reminder:', e)
   }
 }
 
@@ -537,71 +557,6 @@ const plantingStrategyOptions = [
   { label: '最大净利润/时', value: 'max_profit' },
   { label: '最大普通肥净利润/时', value: 'max_fert_profit' },
 ]
-
-const channelOptions = [
-  { label: 'Webhook(自定义接口)', value: 'webhook' },
-  { label: '自定义 JSON (Webhook)', value: 'custom_request' },
-  { label: 'Qmsg 酱', value: 'qmsg' },
-  { label: 'Server 酱', value: 'serverchan' },
-  { label: 'Push Plus', value: 'pushplus' },
-  { label: 'Push Plus Hxtrip', value: 'pushplushxtrip' },
-  { label: '钉钉', value: 'dingtalk' },
-  { label: '企业微信', value: 'wecom' },
-  { label: 'Bark', value: 'bark' },
-  { label: 'Go-cqhttp', value: 'gocqhttp' },
-  { label: 'OneBot', value: 'onebot' },
-  { label: 'Atri', value: 'atri' },
-  { label: 'PushDeer', value: 'pushdeer' },
-  { label: 'iGot', value: 'igot' },
-  { label: 'Telegram', value: 'telegram' },
-  { label: '飞书', value: 'feishu' },
-  { label: 'IFTTT', value: 'ifttt' },
-  { label: '企业微信群机器人', value: 'wecombot' },
-  { label: 'Discord', value: 'discord' },
-  { label: 'WxPusher', value: 'wxpusher' },
-]
-
-const CHANNEL_DOCS: Record<string, string> = {
-  webhook: '',
-  custom_request: '',
-  qmsg: 'https://qmsg.zendee.cn/',
-  serverchan: 'https://sct.ftqq.com/',
-  pushplus: 'https://www.pushplus.plus/',
-  pushplushxtrip: 'https://pushplus.hxtrip.com/',
-  dingtalk: 'https://open.dingtalk.com/document/group/custom-robot-access',
-  wecom: 'https://guole.fun/posts/626/',
-  wecombot: 'https://developer.work.weixin.qq.com/document/path/91770',
-  bark: 'https://github.com/Finb/Bark',
-  gocqhttp: 'https://docs.go-cqhttp.org/api/',
-  onebot: 'https://docs.go-cqhttp.org/api/',
-  atri: 'https://blog.tianli0.top/',
-  pushdeer: 'https://www.pushdeer.com/',
-  igot: 'https://push.hellyw.com/',
-  telegram: 'https://core.telegram.org/bots',
-  feishu: 'https://www.feishu.cn/hc/zh-CN/articles/360024984973',
-  ifttt: 'https://ifttt.com/maker_webhooks',
-  discord: 'https://discord.com/developers/docs/resources/webhook#execute-webhook',
-  wxpusher: 'https://wxpusher.zjiecode.com/docs/#/',
-}
-
-const reloginUrlModeOptions = [
-  { label: '不需要', value: 'none' },
-  { label: '链接', value: 'qq_link' },
-  { label: '二维码', value: 'qr_code' },
-  { label: '二维码 + 链接', value: 'all' },
-]
-
-const currentChannelDocUrl = computed(() => {
-  const key = String(localOffline.value.channel || '').trim().toLowerCase()
-  return CHANNEL_DOCS[key] || ''
-})
-
-function openChannelDocs() {
-  const url = currentChannelDocUrl.value
-  if (!url)
-    return
-  window.open(url, '_blank', 'noopener,noreferrer')
-}
 
 const preferredSeedOptions = computed(() => {
   const options = [{ label: '自动选择', value: 0 }]
@@ -867,10 +822,19 @@ async function handleSaveOffline() {
 
   offlineSaving.value = true
   try {
-    const res = await settingStore.saveOfflineConfig(localOffline.value)
+    let res
+    if (useGlobalOfflineReminder.value) {
+      // Save to global config
+      res = await settingStore.saveOfflineConfig(localOffline.value)
+    } else {
+      // Save to account-level config
+      const { data } = await api.post('/api/settings/account-offline-reminder', localOffline.value)
+      res = data?.ok ? { ok: true } : { ok: false, error: data?.error || '保存失败' }
+    }
 
     if (res.ok) {
       showAlert('下线提醒设置已保存')
+      accountOfflineReminder.value = useGlobalOfflineReminder.value ? null : localOffline.value
     }
     else {
       showAlert(`保存失败: ${res.error || '未知错误'}`, 'danger')
@@ -1477,33 +1441,62 @@ async function handleTestOffline() {
           <h3 class="flex items-center gap-2 text-base text-gray-900 font-bold dark:text-gray-100">
             <div class="i-carbon-notification" />
             下线提醒
+            <span v-if="currentAccountName" class="ml-2 text-sm text-gray-500 font-normal dark:text-gray-400">
+              ({{ currentAccountName }})
+            </span>
           </h3>
         </div>
 
         <!-- Offline Content -->
         <div class="flex-1 p-4 space-y-3">
+          <div class="flex items-center justify-between p-3 bg-gray-100 rounded dark:bg-gray-700">
+            <span class="text-sm text-gray-700 font-medium dark:text-gray-300">使用全局下线提醒配置</span>
+            <BaseSwitch
+              v-model="useGlobalOfflineReminder"
+              class="mb-0"
+            />
+          </div>
+
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div class="flex flex-col gap-1.5">
               <div class="flex items-center justify-between">
                 <span class="text-sm text-gray-700 font-medium dark:text-gray-300">推送渠道</span>
-                <BaseButton
-                  variant="text"
-                  size="sm"
-                  :disabled="!currentChannelDocUrl"
-                  @click="openChannelDocs"
-                >
-                  官网
-                </BaseButton>
               </div>
               <BaseSelect
                 v-model="localOffline.channel"
-                :options="channelOptions"
+                :options="[
+                  { label: 'Webhook(自定义接口)', value: 'webhook' },
+                  { label: '自定义 JSON (Webhook)', value: 'custom_request' },
+                  { label: 'Qmsg 酱', value: 'qmsg' },
+                  { label: 'Server 酱', value: 'serverchan' },
+                  { label: 'Push Plus', value: 'pushplus' },
+                  { label: 'Push Plus Hxtrip', value: 'pushplushxtrip' },
+                  { label: '钉钉', value: 'dingtalk' },
+                  { label: '企业微信', value: 'wecom' },
+                  { label: 'Bark', value: 'bark' },
+                  { label: 'Go-cqhttp', value: 'gocqhttp' },
+                  { label: 'OneBot', value: 'onebot' },
+                  { label: 'Atri', value: 'atri' },
+                  { label: 'PushDeer', value: 'pushdeer' },
+                  { label: 'iGot', value: 'igot' },
+                  { label: 'Telegram', value: 'telegram' },
+                  { label: '飞书', value: 'feishu' },
+                  { label: 'IFTTT', value: 'ifttt' },
+                  { label: '企业微信群机器人', value: 'wecombot' },
+                  { label: 'Discord', value: 'discord' },
+                  { label: 'WxPusher', value: 'wxpusher' },
+                ]"
               />
             </div>
             <BaseSelect
               v-model="localOffline.reloginUrlMode"
               label="重登录链接"
-              :options="reloginUrlModeOptions"
+              :options="[
+                { label: '不需要', value: 'none' },
+                { label: '链接', value: 'qq_link' },
+                { label: '二维码', value: 'qr_code' },
+                { label: '二维码 + 链接', value: 'all' },
+              ]"
             />
           </div>
 
@@ -1550,19 +1543,6 @@ async function handleTestOffline() {
             type="text"
             placeholder="提醒内容"
           />
-
-          <template v-if="localOffline.channel === 'custom_request'">
-            <BaseTextarea
-              v-model="localOffline.custom_headers"
-              label="Headers (严格 JSON)"
-              placeholder="例如: {&quot;Content-Type&quot;: &quot;application/json&quot;, &quot;Authorization&quot;: &quot;Bearer TOKEN&quot;}"
-            />
-            <BaseTextarea
-              v-model="localOffline.custom_body"
-              label="Body (严格 JSON, 占位符支持 {{title}}（标题） {{content}}（内容）)"
-              placeholder="例如: { &quot;title&quot;: &quot;{{title}}&quot;, &quot;message&quot;: &quot;{{content}}&quot; }"
-            />
-          </template>
 
           <!-- Save Offline Button -->
           <div class="flex justify-end gap-2 pt-3">

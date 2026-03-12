@@ -15,8 +15,10 @@ function createReloginReminderService(options) {
 
     const reloginWatchers = new Map(); // key: accountId:loginCode
 
-    function getOfflineAutoDeleteMs() {
-        const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
+    function getOfflineAutoDeleteMs(accountId) {
+        const cfg = store.getAccountOfflineReminder 
+            ? store.getAccountOfflineReminder(accountId) 
+            : (store.getOfflineReminder ? store.getOfflineReminder() : null);
         if (!cfg || !cfg.offlineDeleteEnabled) {
             return Number.POSITIVE_INFINITY;
         }
@@ -140,7 +142,13 @@ function createReloginReminderService(options) {
 
     async function triggerOfflineReminder(payload = {}) {
         try {
-            const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
+            const accountId = String(payload.accountId || '').trim();
+            
+            // 优先使用账号级别的配置，如果没有则使用全局配置
+            const cfg = store.getAccountOfflineReminder 
+                ? store.getAccountOfflineReminder(accountId) 
+                : (store.getOfflineReminder ? store.getOfflineReminder() : null);
+            
             if (!cfg) return;
 
             const channel = String(cfg.channel || '').trim().toLowerCase();

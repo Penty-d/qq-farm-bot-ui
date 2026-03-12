@@ -584,12 +584,62 @@ function startAdminServer(dataProvider) {
         }
     });
 
-    // API: 保存下线提醒配置
+    // API: 保存下线提醒配置（全局）
     app.post('/api/settings/offline-reminder', async (req, res) => {
         try {
             const body = (req.body && typeof req.body === 'object') ? req.body : {};
             const data = store.setOfflineReminder ? store.setOfflineReminder(body) : {};
             res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 保存账号级别的下线提醒配置
+    app.post('/api/settings/account-offline-reminder', async (req, res) => {
+        try {
+            const id = getAccId(req);
+            if (!id) {
+                return res.status(400).json({ ok: false, error: '未选择账号' });
+            }
+            const body = (req.body && typeof req.body === 'object') ? req.body : {};
+            
+            // 如果 body 为空对象或 useGlobal 为 true，设置为 null 表示使用全局配置
+            const config = (body.useGlobal === true || Object.keys(body).length === 0) ? null : body;
+            
+            const data = store.setAccountOfflineReminder 
+                ? store.setAccountOfflineReminder(id, config) 
+                : null;
+            res.json({ ok: true, data: data || {} });
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    });
+
+    // API: 获取账号级别的下线提醒配置
+    app.get('/api/settings/account-offline-reminder', async (req, res) => {
+        try {
+            const id = getAccId(req);
+            if (!id) {
+                return res.status(400).json({ ok: false, error: '未选择账号' });
+            }
+            
+            // 获取账号级别的下线提醒配置
+            const accountOfflineReminder = store.getAccountOfflineReminder 
+                ? store.getAccountOfflineReminder(id) 
+                : null;
+            
+            // 获取全局配置
+            const globalOfflineReminder = store.getOfflineReminder ? store.getOfflineReminder() : {};
+            
+            res.json({ 
+                ok: true, 
+                data: {
+                    useGlobal: accountOfflineReminder === null || accountOfflineReminder === undefined,
+                    accountConfig: accountOfflineReminder || {},
+                    globalConfig: globalOfflineReminder
+                }
+            });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

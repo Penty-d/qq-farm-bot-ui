@@ -613,54 +613,108 @@ useIntervalFn(updateCountdowns, 1000)
               <span>运行日志</span>
             </h3>
 
-            <div class="flex flex-wrap items-center gap-2 text-sm">
-              <BaseSelect
-                v-model="filter.module"
-                :options="modules"
-                class="w-32"
-                @change="onLogFilterChange"
-              />
+            <div class="flex flex-col gap-2 text-sm">
+              <!-- 手机端布局 -->
+              <div class="flex gap-2 sm:hidden">
+                <BaseSelect
+                  v-model="filter.module"
+                  :options="modules"
+                  class="flex-1 min-w-0"
+                  @change="onLogFilterChange"
+                />
 
-              <BaseSelect
-                v-model="filter.event"
-                :options="events"
-                class="w-32"
-                @change="onLogFilterChange"
-              />
+                <BaseSelect
+                  v-model="filter.event"
+                  :options="events"
+                  class="flex-1 min-w-0"
+                  @change="onLogFilterChange"
+                />
 
-              <BaseSelect
-                v-model="filter.isWarn"
-                :options="logs"
-                class="w-32"
-                @change="onLogFilterChange"
-              />
+                <BaseButton
+                  variant="primary"
+                  size="sm"
+                  @click="onLogSearchTrigger"
+                >
+                  <div class="i-carbon-search" />
+                </BaseButton>
+              </div>
 
-              <BaseInput
-                v-model="filter.keyword"
-                placeholder="关键词..."
-                class="w-32"
-                clearable
-                @keyup.enter="onLogSearchTrigger"
-                @clear="onLogSearchTrigger"
-              />
+              <div class="flex gap-2 sm:hidden">
+                <BaseSelect
+                  v-model="filter.isWarn"
+                  :options="logs"
+                  class="flex-1 min-w-0"
+                  @change="onLogFilterChange"
+                />
 
-              <BaseButton
-                variant="primary"
-                size="sm"
-                @click="onLogSearchTrigger"
-              >
-                <div class="i-carbon-search" />
-              </BaseButton>
+                <BaseInput
+                  v-model="filter.keyword"
+                  placeholder="关键词..."
+                  class="flex-1 min-w-0"
+                  clearable
+                  @keyup.enter="onLogSearchTrigger"
+                  @clear="onLogSearchTrigger"
+                />
 
-              <BaseButton
-                variant="danger"
-                size="sm"
-                :loading="clearLogsLoading"
-                @click="onClearLogs"
-              >
-                <div class="i-carbon-trash-can mr-1" />
-                清空日志
-              </BaseButton>
+                <BaseButton
+                  variant="danger"
+                  size="sm"
+                  :loading="clearLogsLoading"
+                  @click="onClearLogs"
+                >
+                  <div class="i-carbon-trash-can" />
+                </BaseButton>
+              </div>
+
+              <!-- PC端布局：一行显示所有元素 -->
+              <div class="hidden flex-wrap items-center gap-2 sm:flex">
+                <BaseSelect
+                  v-model="filter.module"
+                  :options="modules"
+                  class="w-32"
+                  @change="onLogFilterChange"
+                />
+
+                <BaseSelect
+                  v-model="filter.event"
+                  :options="events"
+                  class="w-32"
+                  @change="onLogFilterChange"
+                />
+
+                <BaseSelect
+                  v-model="filter.isWarn"
+                  :options="logs"
+                  class="w-32"
+                  @change="onLogFilterChange"
+                />
+
+                <BaseInput
+                  v-model="filter.keyword"
+                  placeholder="关键词..."
+                  class="w-32"
+                  clearable
+                  @keyup.enter="onLogSearchTrigger"
+                  @clear="onLogSearchTrigger"
+                />
+
+                <BaseButton
+                  variant="primary"
+                  size="sm"
+                  @click="onLogSearchTrigger"
+                >
+                  <div class="i-carbon-search" />
+                </BaseButton>
+
+                <BaseButton
+                  variant="danger"
+                  size="sm"
+                  :loading="clearLogsLoading"
+                  @click="onClearLogs"
+                >
+                  <div class="i-carbon-trash-can" />
+                </BaseButton>
+              </div>
             </div>
           </div>
 

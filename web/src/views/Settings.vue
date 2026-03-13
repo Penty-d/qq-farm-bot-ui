@@ -415,7 +415,7 @@ const localQrLogin = ref({
 
 const localRuntimeClient = ref({
   serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',
-  clientVersion: '1.6.2.18_20260227',
+  clientVersion: '1.7.0.6_20260313',
   os: 'iOS',
   device_info: {
     sys_software: 'iOS 26.2.1',
@@ -628,6 +628,162 @@ const reloginUrlModeOptions = [
   { label: '二维码', value: 'qr_code' },
   { label: '二维码 + 链接', value: 'all' },
 ]
+
+const runtimeClientPresetMap = {
+  iOS: {
+    systemVersions: [
+      'iOS 15.8.4',
+      'iOS 16.6.1',
+      'iOS 16.7.10',
+      'iOS 17.5.1',
+      'iOS 17.6.1',
+      'iOS 17.7.2',
+      'iOS 18.0',
+      'iOS 18.1.1',
+      'iOS 18.2',
+      'iOS 18.3.1',
+      'iOS 18.3.2',
+      'iOS 18.4',
+      'iOS 26.2.1',
+    ],
+    networks: ['wifi', '5g', '4g'],
+    memories: ['4096', '6144', '7672', '8192'],
+    deviceIds: [
+      'iPhone X<iPhone18,3>',
+      'iPhone XR<iPhone11,8>',
+      'iPhone XS<iPhone11,2>',
+      'iPhone XS Max<iPhone11,6>',
+      'iPhone 11<iPhone12,1>',
+      'iPhone 11 Pro<iPhone12,3>',
+      'iPhone 11 Pro Max<iPhone12,5>',
+      'iPhone 12<iPhone13,2>',
+      'iPhone 12 mini<iPhone13,1>',
+      'iPhone 12 Pro<iPhone13,3>',
+      'iPhone 12 Pro Max<iPhone13,4>',
+      'iPhone 13 mini<iPhone14,4>',
+      'iPhone 13<iPhone14,5>',
+      'iPhone 13 Pro<iPhone14,2>',
+      'iPhone 13 Pro Max<iPhone14,3>',
+      'iPhone SE 3<iPhone14,6>',
+      'iPhone 14 Plus<iPhone14,8>',
+      'iPhone 14<iPhone15,4>',
+      'iPhone 14 Pro<iPhone15,2>',
+      'iPhone 14 Pro Max<iPhone15,3>',
+      'iPhone 15 Plus<iPhone15,5>',
+      'iPhone 15<iPhone16,2>',
+      'iPhone 15 Pro<iPhone16,1>',
+      'iPhone 15 Pro Max<iPhone16,2>',
+      'iPhone 16<iPhone17,3>',
+      'iPhone 16 Plus<iPhone17,4>',
+      'iPhone 16 Pro<iPhone17,1>',
+      'iPhone 16 Pro Max<iPhone17,2>',
+    ],
+    defaults: {
+      clientVersion: '1.7.0.6_20260313',
+      sys_software: 'iOS 26.2.1',
+      network: 'wifi',
+      memory: '7672',
+      device_id: 'iPhone X<iPhone18,3>',
+    },
+  },
+  Android: {
+    systemVersions: [
+      'Android 10',
+      'Android 11',
+      'Android 12',
+      'Android 12L',
+      'Android 13',
+      'Android 14',
+      'Android 15',
+      'MIUI 14 / Android 13',
+      'HyperOS 1 / Android 14',
+      'One UI 6.1 / Android 14',
+      'ColorOS 14 / Android 14',
+      'OriginOS 4 / Android 14',
+    ],
+    networks: ['wifi', '5g', '4g'],
+    memories: ['4096', '6144', '8192', '12288'],
+    deviceIds: [
+      'Samsung S23<SM-S911B>',
+      'Samsung S23 Ultra<SM-S9180>',
+      'Samsung S24<SM-S921B>',
+      'Samsung S24 Ultra<SM-S9280>',
+      'Pixel 7<GQML3>',
+      'Pixel 8<shiba>',
+      'Pixel 8 Pro<husky>',
+      'Pixel 9 Pro<caiman>',
+      'Xiaomi 13<2211133C>',
+      'Xiaomi 14<23127PN0CC>',
+      'Xiaomi 14 Pro<23116PN5BC>',
+      'Xiaomi 15<24129PN74C>',
+      'Redmi K70<2311DRK48C>',
+      'Redmi K70 Pro<23117RK66C>',
+      'OnePlus 11<PHB110>',
+      'OnePlus 12<PJD110>',
+      'OnePlus Ace 3<PGJM10>',
+      'vivo X100<V2309A>',
+      'vivo X100 Pro<V2324A>',
+      'iQOO 12<V2307A>',
+      'OPPO Find X7<PHZ110>',
+      'OPPO Find X7 Ultra<PHY110>',
+      'HUAWEI P60<ADY-AL00>',
+      'HUAWEI Mate 60<ALN-AL00>',
+      'HONOR Magic6<BDY-AN00>',
+    ],
+    defaults: {
+      clientVersion: '1.7.0.6_20260313',
+      sys_software: 'Android 14',
+      network: 'wifi',
+      memory: '8192',
+      device_id: 'Xiaomi 14<23127PN0CC>',
+    },
+  },
+} as const
+
+const runtimeOsOptions = Object.keys(runtimeClientPresetMap).map(os => ({ label: os, value: os }))
+
+function toRuntimeOptions(values: readonly string[], currentValue: string) {
+  const options = values.map(value => ({ label: value, value }))
+  const current = String(currentValue || '').trim()
+  if (!current || options.some(option => option.value === current))
+    return options
+  return [{ label: `${current} (当前值)`, value: current }, ...options]
+}
+
+const currentRuntimePreset = computed(() => {
+  const os = String(localRuntimeClient.value.os || 'iOS')
+  return runtimeClientPresetMap[os as keyof typeof runtimeClientPresetMap] || runtimeClientPresetMap.iOS
+})
+
+const runtimeSystemVersionOptions = computed(() =>
+  toRuntimeOptions(currentRuntimePreset.value.systemVersions, String(localRuntimeClient.value.device_info.sys_software || '')),
+)
+
+const runtimeNetworkOptions = computed(() =>
+  toRuntimeOptions(currentRuntimePreset.value.networks, String(localRuntimeClient.value.device_info.network || '')),
+)
+
+const runtimeMemoryOptions = computed(() =>
+  toRuntimeOptions(currentRuntimePreset.value.memories, String(localRuntimeClient.value.device_info.memory || '')),
+)
+
+const runtimeDeviceIdOptions = computed(() =>
+  toRuntimeOptions(currentRuntimePreset.value.deviceIds, String(localRuntimeClient.value.device_info.device_id || '')),
+)
+
+function handleRuntimeOsChange(value: string | number) {
+  const os = String(value || 'iOS')
+  const preset = runtimeClientPresetMap[os as keyof typeof runtimeClientPresetMap]
+  if (!preset)
+    return
+
+  localRuntimeClient.value.os = os
+  localRuntimeClient.value.clientVersion = preset.defaults.clientVersion
+  localRuntimeClient.value.device_info.sys_software = preset.defaults.sys_software
+  localRuntimeClient.value.device_info.network = preset.defaults.network
+  localRuntimeClient.value.device_info.memory = preset.defaults.memory
+  localRuntimeClient.value.device_info.device_id = preset.defaults.device_id
+}
 
 const currentChannelDocUrl = computed(() => {
   const key = String(localOffline.value.channel || '').trim().toLowerCase()
@@ -992,7 +1148,7 @@ async function handleTestOffline() {
       <p>加载中...</p>
     </div>
 
-    <div v-else class="grid grid-cols-1 mt-12 gap-4 text-sm lg:grid-cols-2">
+    <div v-else class="grid grid-cols-1 gap-4 text-sm lg:grid-cols-2">
       <!-- Card 1: Strategy & Automation -->
       <div v-if="currentAccountId" class="card h-full flex flex-col rounded-lg bg-white shadow dark:bg-gray-800">
         <!-- Strategy Header -->
@@ -1181,7 +1337,7 @@ async function handleTestOffline() {
         </div>
 
         <!-- Auto Control Content -->
-        <div class="flex-1 p-4 space-y-4">
+        <div class="p-4 space-y-4">
           <!-- Switches Grid -->
           <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
             <BaseSwitch v-model="localSettings.automation.farm" label="自动种植收获" />
@@ -1414,7 +1570,7 @@ async function handleTestOffline() {
         </div>
 
         <!-- Save Button -->
-        <div class="mt-auto flex justify-end border-t bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
+        <div class="flex justify-end border-t bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/50">
           <BaseButton
             variant="primary"
             size="sm"
@@ -1512,7 +1668,7 @@ async function handleTestOffline() {
               </div>
             </div>
           </div>
-        </div>
+          </div>
 
         <!-- QR Login Header -->
         <div class="border-b border-t bg-gray-50/50 px-4 py-3 dark:border-gray-700 dark:bg-gray-800/50">
@@ -1535,45 +1691,46 @@ async function handleTestOffline() {
               v-model="localRuntimeClient.clientVersion"
               label="游戏版本号"
               type="text"
-              placeholder="例如: 1.6.2.18_20260227"
+              placeholder="例如: 1.7.0.6_20260313"
             />
           </div>
 
           <BaseSelect
             v-model="localRuntimeClient.os"
             label="系统 (os)"
-            :options="[{ label: 'iOS', value: 'iOS' }, { label: 'Android', value: 'Android' }]"
+            :options="runtimeOsOptions"
+            @change="handleRuntimeOsChange"
           />
 
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <BaseInput
+            <BaseSelect
               v-model="localRuntimeClient.device_info.sys_software"
               label="系统版本号"
-              type="text"
-              placeholder="例如: iOS 26.2.1"
+              :options="runtimeSystemVersionOptions"
             />
-            <BaseInput
+            <BaseSelect
               v-model="localRuntimeClient.device_info.network"
               label="网络类型"
-              type="text"
-              placeholder="例如: wifi"
+              :options="runtimeNetworkOptions"
             />
           </div>
 
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <BaseInput
+            <BaseSelect
               v-model="localRuntimeClient.device_info.memory"
               label="内存大小（单位MB）"
-              type="text"
-              placeholder="例如: 7672"
+              :options="runtimeMemoryOptions"
             />
-            <BaseInput
+            <BaseSelect
               v-model="localRuntimeClient.device_info.device_id"
               label="设备ID"
-              type="text"
-              placeholder="例如: iPhone X<iPhone18,3>"
+              :options="runtimeDeviceIdOptions"
             />
           </div>
+
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            切换系统后会自动带入一组对应预设参数，其他项目可以从下拉列表中直接选择。
+          </p>
 
           <p class="text-xs text-gray-500 dark:text-gray-400">
             保存后，运行中的账号会自动重连以生效。

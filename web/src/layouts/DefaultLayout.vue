@@ -1,23 +1,102 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useDateFormat, useIntervalFn, useNow } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import api from '@/api'
 import { useAppStore } from '@/stores/app'
 import { useAccountStore } from '@/stores/account'
+import { useStatusStore } from '@/stores/status'
 import { getPlatformClass, getPlatformLabel } from '@/stores/account'
 
 const appStore = useAppStore()
 const accountStore = useAccountStore()
+const statusStore = useStatusStore()
 const { sidebarOpen } = storeToRefs(appStore)
 const { accounts, currentAccount } = storeToRefs(accountStore)
+const { status, realtimeConnected } = storeToRefs(statusStore)
 const route = useRoute()
 const contentScrollRef = ref<HTMLElement | null>(null)
 const showMobileMenu = ref(false)
 const showAccountSelector = ref(false)
 const menuButtonRef = ref<HTMLElement | null>(null)
 const accountSelectorRef = ref<HTMLElement | null>(null)
+
+// 状态相关
+const systemConnected = ref(true)
+const serverUptimeBase = ref(0)
+const serverVersion = ref('')
+const lastPingTime = ref(Date.now())
+const now = useNow()
+const formattedTime = useDateFormat(now, 'YYYY-MM-DD HH:mm:ss')
+const version = __APP_VERSION__
+
+async function checkConnection() {
+  try {
+    const res = await api.get('/api/ping')
+    systemConnected.value = true
+    if (res.data.ok && res.data.data) {
+      if (res.data.data.uptime) {
+        serverUptimeBase.value = res.data.data.uptime
+        lastPingTime.value = Date.now()
+      }
+      if (res.data.data.version) {
+        serverVersion.value = res.data.data.version
+      }
+    }
+  }
+  catch {
+    systemConnected.value = false
+  }
+}
+
+const uptime = computed(() => {
+  const diff = Math.floor(serverUptimeBase.value + (now.value.getTime() - lastPingTime.value) / 1000)
+  const h = Math.floor(diff / 3600)
+  const m = Math.floor((diff % 3600) / 60)
+  const s = diff % 60
+  return `${h}h ${m}m ${s}s`
+})
+
+const connectionStatus = computed(() => {
+  if (!systemConnected.value) {
+    return {
+      text: '系统离线',
+      color: 'bg-red-500',
+      pulse: false,
+    }
+  }
+
+  if (!currentAccount.value?.id) {
+    return {
+      text: '请添加账号',
+      color: 'bg-gray-400',
+      pulse: false,
+    }
+  }
+
+  const isConnected = status.value?.connection?.connected
+  if (isConnected) {
+    return {
+      text: '运行中',
+      color: 'bg-green-500',
+      pulse: true,
+    }
+  }
+
+  return {
+    text: '未连接',
+    color: 'bg-gray-400',
+    pulse: false,
+  }
+})
+
+onMounted(() => {
+  checkConnection()
+  useIntervalFn(checkConnection, 30000)
+})
 
 watch(
   () => route.fullPath,
@@ -171,32 +250,63 @@ function getAccountMeta(account: any) {
             <!-- Dropdown Menu -->
             <div
               v-if="showMobileMenu"
-              class="absolute bottom-full left-1/2 z-50 mb-2 w-40 -translate-x-1/2 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+              class="absolute bottom-full right-0 z-50 mb-2 w-96 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
             >
-              <router-link
-                to="/friends"
-                class="flex items-center gap-3 px-4 py-3 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
-                @click="showMobileMenu = false"
-              >
-                <div class="i-carbon-user-multiple" />
-                <span>好友</span>
-              </router-link>
-              <router-link
-                to="/analytics"
-                class="flex items-center gap-3 px-4 py-3 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
-                @click="showMobileMenu = false"
-              >
-                <div class="i-carbon-analytics" />
-                <span>分析</span>
-              </router-link>
-              <router-link
-                to="/settings"
-                class="flex items-center gap-3 px-4 py-3 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
-                @click="showMobileMenu = false"
-              >
-                <div class="i-carbon-settings" />
-                <span>设置</span>
-              </router-link>
+              <div class="flex">
+                <!-- 左侧：状态信息 (70%) -->
+                <div class="w-[70%] border-r border-gray-100 p-4 dark:border-gray-700">
+                  <!-- 第一行：状态 + 运行时长 -->
+                  <div class="mb-3 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <div
+                        class="h-2.5 w-2.5 rounded-full"
+                        :class="[connectionStatus.color, { 'animate-pulse': connectionStatus.pulse }]"
+                      />
+                      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ connectionStatus.text }}</span>
+                    </div>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ uptime }}</span>
+                  </div>
+
+                  <!-- 第二行：启动时间 -->
+                  <div class="mb-3 text-xs text-gray-400">
+                    {{ formattedTime }}
+                  </div>
+
+                  <!-- 第三行：版本号（同一行） -->
+                  <div class="flex items-center justify-between text-xs text-gray-400 font-mono opacity-60">
+                    <span>Web v{{ version }}</span>
+                    <span v-if="serverVersion">Core v{{ serverVersion }}</span>
+                  </div>
+                </div>
+
+                <!-- 右侧：功能菜单 (30%) -->
+                <div class="flex w-[30%] flex-col items-center justify-center p-2">
+                  <router-link
+                    to="/friends"
+                    class="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                    @click="showMobileMenu = false"
+                  >
+                    <div class="i-carbon-user-multiple" />
+                    <span>好友</span>
+                  </router-link>
+                  <router-link
+                    to="/analytics"
+                    class="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                    @click="showMobileMenu = false"
+                  >
+                    <div class="i-carbon-analytics" />
+                    <span>分析</span>
+                  </router-link>
+                  <router-link
+                    to="/settings"
+                    class="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                    @click="showMobileMenu = false"
+                  >
+                    <div class="i-carbon-settings" />
+                    <span>设置</span>
+                  </router-link>
+                </div>
+              </div>
             </div>
           </div>
         </div>

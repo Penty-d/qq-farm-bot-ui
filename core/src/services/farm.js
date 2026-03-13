@@ -1190,6 +1190,41 @@ function sortBagSeedsByPriority(bagSeeds, priority) {
 /**
  * 从商店购买种子并种植
  */
+const FARM_LAYOUT_ROWS = 4;
+
+function getLandGridPosition(landId) {
+    const id = toNum(landId);
+    if (id <= 0) return null;
+
+    const zeroBased = id - 1;
+    return {
+        row: zeroBased % FARM_LAYOUT_ROWS,
+        col: Math.floor(zeroBased / FARM_LAYOUT_ROWS),
+    };
+}
+
+function getLandUpgradePriority(landId) {
+    const pos = getLandGridPosition(landId);
+    if (!pos) return Number.MAX_SAFE_INTEGER;
+
+    const groupCol = Math.floor(pos.col / 2);
+    const groupRow = Math.floor(pos.row / 2);
+    const groupsPerColumnPair = Math.ceil(FARM_LAYOUT_ROWS / 2);
+    const groupIndex = groupCol * groupsPerColumnPair + groupRow;
+    const withinGroupIndex = (pos.col % 2) * 2 + (pos.row % 2);
+
+    return groupIndex * 4 + withinGroupIndex;
+}
+
+function sortLandIdsForUpgrade(landIds) {
+    const ids = Array.isArray(landIds) ? landIds.map(id => toNum(id)).filter(Boolean) : [];
+    return ids.sort((a, b) => {
+        const priorityDiff = getLandUpgradePriority(a) - getLandUpgradePriority(b);
+        if (priorityDiff !== 0) return priorityDiff;
+        return a - b;
+    });
+}
+
 async function plantFromShop(landsToPlant, state) {
     let bestSeed;
     try {
@@ -1695,7 +1730,8 @@ async function runFarmOperation(opType, options = {}) {
 
         if (status.upgradable.length > 0) {
             let upgraded = 0;
-            for (const landId of status.upgradable) {
+            const sortedUpgradableLandIds = sortLandIdsForUpgrade(status.upgradable);
+            for (const landId of sortedUpgradableLandIds) {
                 try {
                     const reply = await upgradeLand(landId);
                     const newLevel = reply.land ? toNum(reply.land.level) : '?';

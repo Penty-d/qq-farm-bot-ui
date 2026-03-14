@@ -120,6 +120,7 @@ const localSettings = ref({
   preferredSeedId: 0,
   bagSeedPriority: [] as number[],
   intervals: { farmMin: 2, farmMax: 2, friendMin: 10, friendMax: 10 },
+  friendBlockLevel: { enabled: true, Level: 1},
   friendQuietHours: { enabled: false, start: '23:00', end: '07:00' },
   automation: {
     farm: false,
@@ -438,6 +439,7 @@ function syncLocalSettings() {
       preferredSeedId: settings.value.preferredSeedId,
       bagSeedPriority: settings.value.bagSeedPriority || [],
       intervals: settings.value.intervals,
+      friendBlockLevel: settings.value.friendBlockLevel,
       friendQuietHours: settings.value.friendQuietHours,
       automation: settings.value.automation,
     }))
@@ -1008,168 +1010,149 @@ async function handleTestOffline() {
 
         <!-- Strategy Content -->
         <div class="p-4 space-y-3">
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <BaseSelect
-              v-model="localSettings.plantingStrategy"
-              label="种植策略"
-              :options="plantingStrategyOptions"
-            />
-            <BaseSelect
-              v-if="localSettings.plantingStrategy === 'preferred'"
-              v-model="localSettings.preferredSeedId"
-              label="优先种植种子"
-              :options="preferredSeedOptions"
-            />
-            <!-- 预览区域：与 BaseSelect 同结构同样式，避免切换策略时布局跳动 -->
-            <div v-else-if="localSettings.plantingStrategy !== 'bag_priority'" class="flex flex-col gap-1.5">
-              <label class="text-sm text-gray-700 font-medium dark:text-gray-300">策略选种预览</label>
-              <div
-                class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400"
-              >
-                <span class="truncate">{{ strategyPreviewLabel ?? '加载中...' }}</span>
-                <div class="i-carbon-chevron-down shrink-0 text-lg text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          <!-- 背包种子优先级列表 -->
-          <div v-if="localSettings.plantingStrategy === 'bag_priority'" class="mt-3">
-            <div class="mb-2 flex items-center justify-between">
-              <label class="text-sm text-gray-700 font-medium dark:text-gray-300">背包种子优先级</label>
-              <div class="flex items-center gap-2">
-                <button
-                  class="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-600"
-                  @click="fetchBagSeeds"
-                >
-                  刷新
-                </button>
-                <button
-                  class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600"
-                  @click="resetBagSeedPriority"
-                >
-                  重置排序
-                </button>
-              </div>
-            </div>
-
-            <div v-if="bagSeedsLoading" class="py-4 text-center text-gray-500">
-              加载中...
-            </div>
-            <div v-else-if="sortedBagSeeds.length === 0" class="py-4 text-center text-gray-500 dark:text-gray-400">
-              背包中暂无种子
-            </div>
-            <div v-else class="max-h-64 overflow-y-auto space-y-1">
-              <div
-                v-for="(seed, index) in sortedBagSeeds"
-                :key="seed.seedId"
-                draggable="true"
-                class="flex cursor-grab select-none items-center gap-3 border border-gray-200 rounded-lg bg-gray-50 p-2 dark:border-gray-600 dark:bg-gray-800/50"
-                @dragstart="onDragStart($event, index)"
-                @dragover="onDragOver"
-                @drop="onDrop(index)"
-                @dragend="onDragEnd"
-              >
-                <div class="flex items-center gap-1 text-gray-400 dark:text-gray-500">
-                  <div class="i-carbon-draggable text-lg" />
-                  <span class="w-5 text-center text-sm font-medium">{{ index + 1 }}</span>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <BaseSelect v-model="localSettings.plantingStrategy"
+                            label="种植策略"
+                            :options="plantingStrategyOptions" />
+                <BaseSelect v-if="localSettings.plantingStrategy === 'preferred'"
+                            v-model="localSettings.preferredSeedId"
+                            label="优先种植种子"
+                            :options="preferredSeedOptions" />
+                <!-- 预览区域：与 BaseSelect 同结构同样式，避免切换策略时布局跳动 -->
+                <div v-else-if="localSettings.plantingStrategy !== 'bag_priority'" class="flex flex-col gap-1.5">
+                    <label class="text-sm text-gray-700 font-medium dark:text-gray-300">策略选种预览</label>
+                    <div class="w-full flex items-center justify-between border border-gray-200 rounded-lg bg-gray-50 px-3 py-2 text-gray-500 dark:border-gray-600 dark:bg-gray-800/50 dark:text-gray-400">
+                        <span class="truncate">{{ strategyPreviewLabel ?? '加载中...' }}</span>
+                        <div class="i-carbon-chevron-down shrink-0 text-lg text-gray-400" />
+                    </div>
                 </div>
-                <img
-                  v-if="seed.image"
-                  :src="seed.image"
-                  :alt="seed.name"
-                  class="pointer-events-none h-8 w-8 object-contain"
-                >
-                <div v-else class="pointer-events-none h-8 w-8 rounded bg-gray-200 dark:bg-gray-700" />
-                <div class="pointer-events-none min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span
-                      v-if="seed.requiredLevel >= 200"
-                      class="rounded bg-yellow-100 px-1.5 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400"
-                    >活动</span>
-                    <span class="truncate text-sm text-gray-800 font-medium dark:text-gray-200">{{ seed.name }}</span>
-                  </div>
-                  <div class="text-xs text-gray-500 dark:text-gray-400">
-                    数量: {{ seed.count }} | {{ seed.requiredLevel >= 200 ? '活动种子' : `${seed.requiredLevel}级` }}
-                    <span v-if="seed.plantSize > 1"> | {{ seed.plantSize }}x{{ seed.plantSize }}</span>
-                  </div>
-                </div>
-                <div class="flex flex-col gap-1">
-                  <button
-                    class="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
-                    :disabled="index === 0"
-                    @click.stop="moveSeedUp(index)"
-                  >
-                    <div class="i-carbon-chevron-up" />
-                  </button>
-                  <button
-                    class="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
-                    :disabled="index === sortedBagSeeds.length - 1"
-                    @click.stop="moveSeedDown(index)"
-                  >
-                    <div class="i-carbon-chevron-down" />
-                  </button>
-                </div>
-              </div>
             </div>
-            <div class="mt-2 text-xs text-gray-500 space-y-1 dark:text-gray-400">
-              <p>* 拖拽或点击箭头调整种植优先级</p>
-              <p>* 仅支持 1x1 种子，2x2 及以上种子会被跳过</p>
-              <p>* 1x1 种子用完后将自动切换为"最高等级"策略</p>
-            </div>
-          </div>
 
-          <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <BaseInput
-              v-model.number="localSettings.intervals.farmMin"
-              label="农场巡查最小 (秒)"
-              type="number"
-              min="1"
-              max="86400"
-            />
-            <BaseInput
-              v-model.number="localSettings.intervals.farmMax"
-              label="农场巡查最大 (秒)"
-              type="number"
-              min="1"
-              max="86400"
-            />
-            <BaseInput
-              v-model.number="localSettings.intervals.friendMin"
-              label="好友巡查最小 (秒)"
-              type="number"
-              min="1"
-              max="86400"
-            />
-            <BaseInput
-              v-model.number="localSettings.intervals.friendMax"
-              label="好友巡查最大 (秒)"
-              type="number"
-              min="1"
-              max="86400"
-            />
-          </div>
+            <!-- 背包种子优先级列表 -->
+            <div v-if="localSettings.plantingStrategy === 'bag_priority'" class="mt-3">
+                <div class="mb-2 flex items-center justify-between">
+                    <label class="text-sm text-gray-700 font-medium dark:text-gray-300">背包种子优先级</label>
+                    <div class="flex items-center gap-2">
+                        <button class="text-xs text-blue-500 dark:text-blue-400 hover:text-blue-600"
+                                @click="fetchBagSeeds">
+                            刷新
+                        </button>
+                        <button class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600"
+                                @click="resetBagSeedPriority">
+                            重置排序
+                        </button>
+                    </div>
+                </div>
 
-          <div class="mt-4 flex flex-wrap items-center gap-4 border-t pt-3 dark:border-gray-700">
-            <BaseSwitch
-              v-model="localSettings.friendQuietHours.enabled"
-              label="启用静默时段"
-            />
-            <div class="flex items-center gap-2">
-              <BaseInput
-                v-model="localSettings.friendQuietHours.start"
-                type="time"
-                class="w-24"
-                :disabled="!localSettings.friendQuietHours.enabled"
-              />
-              <span class="text-gray-500">-</span>
-              <BaseInput
-                v-model="localSettings.friendQuietHours.end"
-                type="time"
-                class="w-24"
-                :disabled="!localSettings.friendQuietHours.enabled"
-              />
+                <div v-if="bagSeedsLoading" class="py-4 text-center text-gray-500">
+                    加载中...
+                </div>
+                <div v-else-if="sortedBagSeeds.length === 0" class="py-4 text-center text-gray-500 dark:text-gray-400">
+                    背包中暂无种子
+                </div>
+                <div v-else class="max-h-64 overflow-y-auto space-y-1">
+                    <div v-for="(seed, index) in sortedBagSeeds"
+                         :key="seed.seedId"
+                         draggable="true"
+                         class="flex cursor-grab select-none items-center gap-3 border border-gray-200 rounded-lg bg-gray-50 p-2 dark:border-gray-600 dark:bg-gray-800/50"
+                         @dragstart="onDragStart($event, index)"
+                         @dragover="onDragOver"
+                         @drop="onDrop(index)"
+                         @dragend="onDragEnd">
+                        <div class="flex items-center gap-1 text-gray-400 dark:text-gray-500">
+                            <div class="i-carbon-draggable text-lg" />
+                            <span class="w-5 text-center text-sm font-medium">{{ index + 1 }}</span>
+                        </div>
+                        <img v-if="seed.image"
+                             :src="seed.image"
+                             :alt="seed.name"
+                             class="pointer-events-none h-8 w-8 object-contain">
+                        <div v-else class="pointer-events-none h-8 w-8 rounded bg-gray-200 dark:bg-gray-700" />
+                        <div class="pointer-events-none min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span v-if="seed.requiredLevel >= 200"
+                                      class="rounded bg-yellow-100 px-1.5 py-0.5 text-xs text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400">活动</span>
+                                <span class="truncate text-sm text-gray-800 font-medium dark:text-gray-200">{{ seed.name }}</span>
+                            </div>
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                数量: {{ seed.count }} | {{ seed.requiredLevel >= 200 ? '活动种子' : `${seed.requiredLevel}级` }}
+                                <span v-if="seed.plantSize > 1"> | {{ seed.plantSize }}x{{ seed.plantSize }}</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <button class="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
+                                    :disabled="index === 0"
+                                    @click.stop="moveSeedUp(index)">
+                                <div class="i-carbon-chevron-up" />
+                            </button>
+                            <button class="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30 dark:hover:text-gray-300"
+                                    :disabled="index === sortedBagSeeds.length - 1"
+                                    @click.stop="moveSeedDown(index)">
+                                <div class="i-carbon-chevron-down" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 space-y-1 dark:text-gray-400">
+                    <p>* 拖拽或点击箭头调整种植优先级</p>
+                    <p>* 仅支持 1x1 种子，2x2 及以上种子会被跳过</p>
+                    <p>* 1x1 种子用完后将自动切换为"最高等级"策略</p>
+                </div>
             </div>
-          </div>
+
+            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <BaseInput v-model.number="localSettings.intervals.farmMin"
+                           label="农场巡查最小 (秒)"
+                           type="number"
+                           min="1"
+                           max="86400" />
+                <BaseInput v-model.number="localSettings.intervals.farmMax"
+                           label="农场巡查最大 (秒)"
+                           type="number"
+                           min="1"
+                           max="86400" />
+                <BaseInput v-model.number="localSettings.intervals.friendMin"
+                           label="好友巡查最小 (秒)"
+                           type="number"
+                           min="1"
+                           max="86400" />
+                <BaseInput v-model.number="localSettings.intervals.friendMax"
+                           label="好友巡查最大 (秒)"
+                           type="number"
+                           min="1"
+                           max="86400" />
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center gap-4 border-t pt-3 dark:border-gray-700">
+                <div class="flex items-center gap-2">
+                    <BaseSwitch v-model="localSettings.friendBlockLevel.enabled"
+                                label="启用屏蔽好友等级" />
+                    <BaseInput v-model="localSettings.friendBlockLevel.Level"
+                               type="number"
+                               min="1"
+                               max="999"
+                               step="1"
+                               required
+                               class="w-24"
+                               :disabled="!localSettings.friendBlockLevel.enabled" />
+                </div>
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center gap-4 border-t pt-3 dark:border-gray-700">
+                <BaseSwitch v-model="localSettings.friendQuietHours.enabled"
+                            label="启用静默时段" />
+                <div class="flex items-center gap-2">
+                    <BaseInput v-model="localSettings.friendQuietHours.start"
+                               type="time"
+                               class="w-24"
+                               :disabled="!localSettings.friendQuietHours.enabled" />
+                    <span class="text-gray-500">-</span>
+                    <BaseInput v-model="localSettings.friendQuietHours.end"
+                               type="time"
+                               class="w-24"
+                               :disabled="!localSettings.friendQuietHours.enabled" />
+                </div>
+            </div>
         </div>
 
         <!-- Auto Control Header -->

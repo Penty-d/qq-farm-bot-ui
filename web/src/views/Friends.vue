@@ -537,9 +537,12 @@ function formatInteractTime(timestamp: number) {
                   <div v-else class="i-carbon-user text-gray-400" />
                 </div>
                 <div>
-                  <div class="flex items-center gap-2 font-bold">
-                    {{ friend.name }}
-                  </div>
+                    <div class="flex items-center gap-2 font-bold">
+                        {{ friend.name }}
+                        <span v-if="friend.level" class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                            Lv.{{ friend.level }}
+                        </span>
+                    </div>
                   <div class="text-sm" :class="getFriendStatusText(friend) !== '无操作' ? 'text-green-500 font-medium' : 'text-gray-400'">
                     {{ getFriendStatusText(friend) }}
                   </div>
@@ -645,10 +648,13 @@ function formatInteractTime(timestamp: number) {
                   <div v-else class="i-carbon-user text-gray-400" />
                 </div>
                 <div>
-                  <div class="flex items-center gap-2 font-bold">
-                    {{ friend.name }}
-                    <span class="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">已屏蔽</span>
-                  </div>
+                    <div class="flex items-center gap-2 font-bold">
+                        {{ friend.name }}
+                        <span v-if="friend.level" class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                            Lv.{{ friend.level }}
+                        </span>
+                        <span class="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">已屏蔽</span>
+                    </div>
                   <div class="text-sm" :class="getFriendStatusText(friend) !== '无操作' ? 'text-green-500 font-medium' : 'text-gray-400'">
                     {{ getFriendStatusText(friend) }}
                   </div>

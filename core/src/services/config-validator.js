@@ -103,6 +103,16 @@ const INTERVALS_SCHEMA = {
     additionalProperties: false,
 };
 
+//屏蔽等级配置Schema
+const BLOCKLEVEL_SCHEMA = {
+    type: 'object',
+    properties: {
+        enabled: { type: 'boolean', default: true },
+        Level: { type: 'number', min: 1, max: 999, default: 1 },
+    },
+    additionalProperties: false,
+};
+
 // 静默时段配置Schema
 const QUIET_HOURS_SCHEMA = {
     type: 'object',
@@ -134,6 +144,7 @@ const ACCOUNT_CONFIG_SCHEMA = {
             default: 'preferred',
         },
         preferredSeedId: { type: 'number', min: 0, default: 0 },
+        friendBlockLevel: BLOCKLEVEL_SCHEMA,
         friendQuietHours: QUIET_HOURS_SCHEMA,
         friendBlacklist: { type: 'array', items: { type: 'number' }, default: [] },
     },
@@ -177,6 +188,7 @@ class ConfigValidator {
         // 注册默认Schema
         this.registerSchema('automation', AUTOMATION_SCHEMA);
         this.registerSchema('intervals', INTERVALS_SCHEMA);
+        this.registerSchema('blockLevel', BLOCKLEVEL_SCHEMA);
         this.registerSchema('quietHours', QUIET_HOURS_SCHEMA);
         this.registerSchema('accountConfig', ACCOUNT_CONFIG_SCHEMA);
         this.registerSchema('offlineReminder', OFFLINE_REMINDER_SCHEMA);
@@ -328,6 +340,10 @@ function validateOfflineReminder(config) {
     return globalValidator.validateAndDefault('offlineReminder', config);
 }
 
+function validateBlockLevel(config) {
+    return globalValidator.validateAndDefault('blockLevel', config);
+}
+
 function validateQuietHours(config) {
     return globalValidator.validateAndDefault('quietHours', config);
 }
@@ -356,11 +372,13 @@ module.exports = {
     validateIntervals,
     validateAccountConfig,
     validateOfflineReminder,
+    validateBlockLevel,
     validateQuietHours,
     validateConfig,
     // Schema
     AUTOMATION_SCHEMA,
     INTERVALS_SCHEMA,
+    BLOCKLEVEL_SCHEMA,
     QUIET_HOURS_SCHEMA,
     ACCOUNT_CONFIG_SCHEMA,
     OFFLINE_REMINDER_SCHEMA,

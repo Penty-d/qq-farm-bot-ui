@@ -26,7 +26,7 @@ const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = 
 const { connect, reconnect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
-const { validateAutomation, validateIntervals, validateQuietHours } = require('../services/config-validator');
+const { validateAutomation, validateIntervals, validateQuietHours, validateBlockLevel } = require('../services/config-validator');
 
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
     process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
@@ -375,6 +375,9 @@ function applyRuntimeConfig(snapshot, syncNow = false) {
             }
             if (snapshot.intervals) {
                 snapshot.intervals = validateIntervals(snapshot.intervals);
+            }
+            if (snapshot.friendBlockLevel) {
+                snapshot.friendBlockLevel = validateBlockLevel(snapshot.friendBlockLevel);
             }
             if (snapshot.friendQuietHours) {
                 snapshot.friendQuietHours = validateQuietHours(snapshot.friendQuietHours);
